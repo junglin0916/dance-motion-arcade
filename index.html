@@ -1,264 +1,114 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Motion Dance Arcade</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- MediaPipe Pose & Camera Utilities -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-    <style>
-        .mirror {
-            transform: scaleX(-1);
-        }
-    </style>
-</head>
-<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
+// Teachable Machine
+// The Coding Train / Daniel Shiffman
+// https://thecodingtrain.com/TeachableMachine/2-teachable-game.html
+// https://editor.p5js.org/codingtrain/sketches/tqoOkW_ai
 
-    <!-- Header Section -->
-    <header class="text-center mb-4">
-        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-500">
-            AI Just-Dance Arcade
-        </h1>
-        <p class="text-slate-400 mt-1">Raise your hands above your shoulders to score points!</p>
-    </header>
+// The video
+let video;
+let flipVideo;
 
-    <!-- Main Game Viewport -->
-    <main class="relative w-full max-w-4xl bg-slate-800 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 aspect-video">
-        
-        <!-- 1. YouTube Background Video -->
-        <div class="absolute inset-0 pointer-events-none overflow-hidden">
-            <iframe id="yt-player" 
-                    class="w-full h-full scale-125" 
-                    src="https://www.youtube.com/embed/fJ9rUzIMcZQ?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" 
-                    frameborder="0" 
-                    allow="autoplay">
-            </iframe>
-        </div>
+// Storing the label
+let label = "waiting...";
 
-        <!-- 2. Mirrored Webcam Feed -->
-        <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror opacity-40 pointer-events-none" playsinline></video>
+// The classifier
+let classifier;
+let modelURL = 'https://teachablemachine.withgoogle.com/models/g0x2_QgiB/';
 
-        <!-- 3. Canvas for Skeleton Tracking -->
-        <canvas id="output_canvas" class="absolute inset-0 w-full h-full object-cover mirror pointer-events-none"></canvas>
+// STEP 1: Load the model!
+function preload() {
+  classifier = ml5.imageClassifier(modelURL + 'model.json');
+}
 
-        <!-- Dynamic Success Feedback Indicator -->
-        <div id="hit-feedback" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 transition-opacity duration-200 z-20">
-            <span class="text-6xl font-black text-yellow-300 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] animate-bounce">
-                PERFECT! +10
-            </span>
-        </div>
+// Snake Game Variables
+let snake;
+let rez = 20;
+let food;
+let w;
+let h;
 
-        <!-- HUD Header -->
-        <div id="hud" class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-10">
-            <div class="bg-slate-900/80 backdrop-blur border border-slate-700 px-4 py-2 rounded-xl text-center">
-                <span class="text-xs uppercase tracking-wider text-slate-400 block">Score</span>
-                <span id="score-display" class="text-3xl font-black text-yellow-400">0</span>
-            </div>
-            <div class="bg-slate-900/80 backdrop-blur border border-slate-700 px-6 py-2 rounded-xl text-center">
-                <span class="text-xs uppercase tracking-wider text-slate-400 block">Current Move</span>
-                <span id="pose-display" class="text-2xl font-black text-emerald-400 animate-pulse">Raise BOTH Hands!</span>
-            </div>
-            <div class="bg-slate-900/80 backdrop-blur border border-slate-700 px-4 py-2 rounded-xl text-center">
-                <span class="text-xs uppercase tracking-wider text-slate-400 block">Time</span>
-                <span id="timer-display" class="text-3xl font-black text-rose-400">30s</span>
-            </div>
-        </div>
+function setup() {
+  createCanvas(640, 480);
+  // Create the video
+  video = createCapture(VIDEO);
+  video.size(640, 480);
+  video.hide();
+  // Mirro the video since we trained it that way!
+  flipVideo = ml5.flipImage(video);
 
-        <!-- Start Overlay -->
-        <div id="start-overlay" class="absolute inset-0 bg-slate-900/90 backdrop-blur flex flex-col items-center justify-center p-6 z-30">
-            <h2 class="text-3xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">Ready to Dance?</h2>
-            <input type="text" id="player-name" placeholder="Enter Player Name" class="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl mb-4 text-center focus:outline-none focus:border-purple-500 w-64 text-white">
-            <button id="start-btn" class="px-8 py-4 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-lg font-bold rounded-xl transition shadow-lg transform active:scale-95">
-                Start Game
-            </button>
-        </div>
+  // STEP 2: Start classifying
+  classifyVideo();
 
-        <!-- Game Over Overlay -->
-        <div id="end-overlay" class="absolute inset-0 bg-slate-900/95 backdrop-blur flex flex-col items-center justify-center p-6 z-30 hidden">
-            <h2 class="text-3xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-500">Stage Complete!</h2>
-            <p id="final-stats" class="text-lg text-slate-300 mb-2"></p>
-            <p id="prize-stats" class="text-md text-emerald-400 font-semibold mb-6"></p>
-            <div id="sheet-status" class="text-xs text-slate-400 mb-6 italic">Logging score to Google Sheet...</div>
-            <button id="restart-btn" class="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition shadow-lg">
-                Play Again
-            </button>
-        </div>
+  // Snake Game
+  w = floor(width / rez);
+  h = floor(height / rez);
+  frameRate(2);
+  snake = new Snake();
+  foodLocation();
+}
 
-    </main>
+// STEP 2 classify!
+function classifyVideo() {
+  // Flip the video!
+  flipVideo = ml5.flipImage(video);
+  classifier.classify(flipVideo, gotResults);
+}
 
-    <script>
-        // ==========================================
-        // CONFIGURATION & GOOGLE SHEET
-        // ==========================================
-        const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
+// Snake Game
+function foodLocation() {
+  let x = floor(random(w));
+  let y = floor(random(h));
+  food = createVector(x, y);
+}
 
-        let score = 0;
-        let timeLeft = 30;
-        let gameInterval = null;
-        let isGameActive = false;
-        let lastScoreTime = 0; // Cooldown to prevent triggering 60 times per second
+// Control the game based on the label
+function controlSnake() {
+  if (label === "left") {
+    snake.setDir(-1, 0);
+  } else if (label === "right") {
+    snake.setDir(1, 0);
+  } else if (label === "down") {
+    snake.setDir(0, 1);
+  } else if (label === "up") {
+    snake.setDir(0, -1);
+  }
+}
 
-        // Target poses with reliable relative coordinate checks (y=0 is top of screen)
-        const poseList = [
-            { 
-                name: "BOTH Hands Up!", 
-                check: (lm) => (lm[15].y < lm[11].y) && (lm[16].y < lm[12].y) 
-            },
-            { 
-                name: "Raise LEFT Hand!", 
-                check: (lm) => (lm[15].y < lm[11].y) && (lm[16].y > lm[12].y) 
-            },
-            { 
-                name: "Raise RIGHT Hand!", 
-                check: (lm) => (lm[16].y < lm[12].y) && (lm[15].y > lm[11].y) 
-            }
-        ];
+function draw() {
+  background(255);
 
-        let currentPoseIndex = 0;
+  // Draw the video?
+  image(flipVideo, 0, 0);
+  textSize(32);
+  fill(0);
+  text(label, 10, 50);
 
-        // DOM References
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const scoreDisplay = document.getElementById('score-display');
-        const timerDisplay = document.getElementById('timer-display');
-        const poseDisplay = document.getElementById('pose-display');
-        const startOverlay = document.getElementById('start-overlay');
-        const endOverlay = document.getElementById('end-overlay');
-        const hitFeedback = document.getElementById('hit-feedback');
+  // Draw the game
+  scale(rez);
+  if (snake.eat(food)) {
+    foodLocation();
+  }
+  snake.update();
+  snake.show();
 
-        // MediaPipe Pose Initialization
-        const pose = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-        });
+  if (snake.endGame()) {
+    print("END GAME");
+    background(255, 0, 0);
+    noLoop();
+  }
 
-        pose.setOptions({
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+  noStroke();
+  fill(255, 0, 0);
+  rect(food.x, food.y, 1, 1);
+}
 
-        pose.onResults(onResults);
-
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await pose.send({ image: videoElement });
-            },
-            width: 1280,
-            height: 720
-        });
-        camera.start();
-
-        function resizeCanvas() {
-            canvasElement.width = videoElement.videoWidth || 640;
-            canvasElement.height = videoElement.videoHeight || 480;
-        }
-
-        function onResults(results) {
-            resizeCanvas();
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-            if (results.poseLandmarks && isGameActive) {
-                const landmarks = results.poseLandmarks;
-
-                // 1. Draw Skeleton Connections
-                drawConnectors(canvasCtx, landmarks, POSE_CONNECTIONS, { color: '#00FFFF', lineWidth: 4 });
-                drawLandmarks(canvasCtx, landmarks, { color: '#FF007F', lineWidth: 2 });
-
-                // 2. Motion Detection Logic with 700ms cooldown
-                const now = Date.now();
-                if (now - lastScoreTime > 700) {
-                    const activePose = poseList[currentPoseIndex];
-                    
-                    if (activePose.check(landmarks)) {
-                        score += 10;
-                        scoreDisplay.textContent = score;
-                        lastScoreTime = now;
-
-                        // Visual Hit FX
-                        hitFeedback.classList.remove('opacity-0');
-                        setTimeout(() => hitFeedback.classList.add('opacity-0'), 400);
-
-                        // Cycle to next target move
-                        currentPoseIndex = (currentPoseIndex + 1) % poseList.length;
-                        poseDisplay.textContent = poseList[currentPoseIndex].name;
-                    }
-                }
-            }
-            canvasCtx.restore();
-        }
-
-        // Control YouTube Video Playback via postMessage
-        function controlYouTube(action) {
-            const iframe = document.getElementById('yt-player').contentWindow;
-            const func = action === 'play' ? 'playVideo' : 'pauseVideo';
-            iframe.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
-        }
-
-        function startGame() {
-            const playerName = document.getElementById('player-name').value.trim() || "Anonymous";
-            score = 0;
-            timeLeft = 30;
-            isGameActive = true;
-            currentPoseIndex = 0;
-
-            scoreDisplay.textContent = score;
-            timerDisplay.textContent = `${timeLeft}s`;
-            poseDisplay.textContent = poseList[currentPoseIndex].name;
-
-            startOverlay.classList.add('hidden');
-            endOverlay.classList.add('hidden');
-
-            controlYouTube('play');
-
-            gameInterval = setInterval(() => {
-                timeLeft--;
-                timerDisplay.textContent = `${timeLeft}s`;
-                if (timeLeft <= 0) {
-                    endGame(playerName);
-                }
-            }, 1000);
-        }
-
-        async function endGame(playerName) {
-            clearInterval(gameInterval);
-            isGameActive = false;
-
-            controlYouTube('pause');
-
-            const prizesWon = Math.floor(score / 50);
-            const gameResult = score >= 100 ? "Winner" : "Completed";
-
-            document.getElementById('final-stats').textContent = `Player: ${playerName} | Score: ${score}`;
-            document.getElementById('prize-stats').textContent = `Prizes Earned: ${prizesWon}`;
-            
-            endOverlay.classList.remove('hidden');
-
-            await sendScoreToGoogleSheet(playerName, score, prizesWon, gameResult);
-        }
-
-        async function sendScoreToGoogleSheet(pName, pScore, pPrizes, pResult) {
-            const payload = { playerName: pName, score: pScore, prizes: pPrizes, result: pResult };
-            try {
-                await fetch(GOOGLE_SHEET_SCRIPT_URL, {
-                    method: "POST",
-                    mode: "no-cors",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                document.getElementById('sheet-status').textContent = "Score successfully logged to Google Sheet!";
-            } catch (error) {
-                document.getElementById('sheet-status').textContent = "Failed to log score to Google Sheet.";
-            }
-        }
-
-        document.getElementById('start-btn').addEventListener('click', startGame);
-        document.getElementById('restart-btn').addEventListener('click', startGame);
-    </script>
-</body>
-</html>
+// STEP 3: Get the classification!
+function gotResults(error, results) {
+  if (error) {
+    console.error(error);
+    return;
+  }
+  label = results[0].label;
+  // Control the snake and classify again!
+  controlSnake();
+  classifyVideo();
+}
