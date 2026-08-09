@@ -1,114 +1,234 @@
-// Teachable Machine
-// The Coding Train / Daniel Shiffman
-// https://thecodingtrain.com/TeachableMachine/2-teachable-game.html
-// https://editor.p5js.org/codingtrain/sketches/tqoOkW_ai
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Dance Arcade - ml5 PoseNet</title>
+    <!-- p5.js Libraries (Matching Snake Game Stack) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.sound.min.js"></script>
+    <!-- ml5.js Library -->
+    <script src="https://unpkg.com/ml5@0.4.2/dist/ml5.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f172a;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
 
-// The video
-let video;
-let flipVideo;
+        h1 {
+            margin: 10px 0 5px 0;
+            font-size: 28px;
+            color: #ec4899;
+        }
 
-// Storing the label
-let label = "waiting...";
+        #game-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border: 4px solid #3b82f6;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
 
-// The classifier
-let classifier;
-let modelURL = 'https://teachablemachine.withgoogle.com/models/g0x2_QgiB/';
+        /* YouTube Background */
+        #yt-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
 
-// STEP 1: Load the model!
-function preload() {
-  classifier = ml5.imageClassifier(modelURL + 'model.json');
-}
+        /* p5 Canvas Overlay */
+        #defaultCanvas0 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
 
-// Snake Game Variables
-let snake;
-let rez = 20;
-let food;
-let w;
-let h;
+        /* UI Score Banner */
+        #ui-bar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 3;
+            pointer-events: none;
+        }
 
-function setup() {
-  createCanvas(640, 480);
-  // Create the video
-  video = createCapture(VIDEO);
-  video.size(640, 480);
-  video.hide();
-  // Mirro the video since we trained it that way!
-  flipVideo = ml5.flipImage(video);
+        .hud-card {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid #475569;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
 
-  // STEP 2: Start classifying
-  classifyVideo();
+        .hud-title {
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
 
-  // Snake Game
-  w = floor(width / rez);
-  h = floor(height / rez);
-  frameRate(2);
-  snake = new Snake();
-  foodLocation();
-}
+        .hud-value {
+            font-size: 22px;
+            font-weight: bold;
+            color: #facc15;
+        }
 
-// STEP 2 classify!
-function classifyVideo() {
-  // Flip the video!
-  flipVideo = ml5.flipImage(video);
-  classifier.classify(flipVideo, gotResults);
-}
+        /* Hit Popup FX */
+        #hit-popup {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            font-weight: 900;
+            color: #facc15;
+            text-shadow: 0 0 10px #000;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+            z-index: 4;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
 
-// Snake Game
-function foodLocation() {
-  let x = floor(random(w));
-  let y = floor(random(h));
-  food = createVector(x, y);
-}
+    <h1>AI Dance Arcade</h1>
+    <p style="color: #94a3b8; margin-top: 0;">Raise your hands above your shoulders to score points!</p>
 
-// Control the game based on the label
-function controlSnake() {
-  if (label === "left") {
-    snake.setDir(-1, 0);
-  } else if (label === "right") {
-    snake.setDir(1, 0);
-  } else if (label === "down") {
-    snake.setDir(0, 1);
-  } else if (label === "up") {
-    snake.setDir(0, -1);
-  }
-}
+    <div id="game-container">
+        <!-- YouTube Background Video -->
+        <iframe id="yt-bg" 
+                src="https://www.youtube.com/embed/fJ9rUzIMcZQ?enablejsapi=1&autoplay=1&mute=1&controls=0&loop=1" 
+                frameborder="0" 
+                allow="autoplay">
+        </iframe>
 
-function draw() {
-  background(255);
+        <!-- HUD Interface -->
+        <div id="ui-bar">
+            <div class="hud-card">
+                <div class="hud-title">Score</div>
+                <div id="score" class="hud-value">0</div>
+            </div>
+            <div class="hud-card">
+                <div class="hud-title">Tracking Status</div>
+                <div id="status-text" class="hud-value" style="color: #34d399; font-size: 16px;">Loading Model...</div>
+            </div>
+        </div>
 
-  // Draw the video?
-  image(flipVideo, 0, 0);
-  textSize(32);
-  fill(0);
-  text(label, 10, 50);
+        <div id="hit-popup">PERFECT! +10</div>
+    </div>
 
-  // Draw the game
-  scale(rez);
-  if (snake.eat(food)) {
-    foodLocation();
-  }
-  snake.update();
-  snake.show();
+    <script>
+        let video;
+        let poseNet;
+        let poses = [];
+        let score = 0;
+        let lastScoreTime = 0;
 
-  if (snake.endGame()) {
-    print("END GAME");
-    background(255, 0, 0);
-    noLoop();
-  }
+        function setup() {
+            let canvas = createCanvas(640, 480);
+            canvas.parent('game-container');
 
-  noStroke();
-  fill(255, 0, 0);
-  rect(food.x, food.y, 1, 1);
-}
+            // WebCam setup via p5.js
+            video = createCapture(VIDEO);
+            video.size(640, 480);
+            video.hide();
 
-// STEP 3: Get the classification!
-function gotResults(error, results) {
-  if (error) {
-    console.error(error);
-    return;
-  }
-  label = results[0].label;
-  // Control the snake and classify again!
-  controlSnake();
-  classifyVideo();
-}
+            // Initialize PoseNet with standard settings
+            poseNet = ml5.poseNet(video, modelReady);
+            poseNet.on('pose', function(results) {
+                poses = results;
+            });
+        }
+
+        function modelReady() {
+            document.getElementById('status-text').innerText = "READY! RAISE HANDS";
+        }
+
+        function draw() {
+            clear();
+
+            // Render mirrored webcam feed
+            push();
+            translate(width, 0);
+            scale(-1, 1);
+            tint(255, 130);
+            image(video, 0, 0, width, height);
+
+            if (poses.length > 0) {
+                let pose = poses[0].pose;
+
+                // Draw Red Dots on Key Joints
+                for (let i = 0; i < pose.keypoints.length; i++) {
+                    let keypoint = pose.keypoints[i];
+                    if (keypoint.score > 0.1) {
+                        fill(255, 0, 100);
+                        noStroke();
+                        ellipse(keypoint.position.x, keypoint.position.y, 10, 10);
+                    }
+                }
+            }
+            pop();
+
+            // Run direct position-based scoring
+            checkScoring();
+        }
+
+        function checkScoring() {
+            if (poses.length > 0) {
+                let pose = poses[0].pose;
+
+                // Grab wrist and shoulder points directly
+                let lw = pose.leftWrist;
+                let rw = pose.rightWrist;
+                let ls = pose.leftShoulder;
+                let rs = pose.rightShoulder;
+
+                // If PoseNet sees shoulder points
+                if (ls.confidence > 0.1 || rs.confidence > 0.1) {
+                    
+                    // Shoulder baseline (the higher shoulder on screen)
+                    let shoulderY = min(ls.y, rs.y);
+
+                    // Check if either wrist is above the shoulder baseline (smaller Y means higher on screen)
+                    let leftHandUp = (lw.confidence > 0.15) && (lw.y < shoulderY);
+                    let rightHandUp = (rw.confidence > 0.15) && (rw.y < shoulderY);
+
+                    if (leftHandUp || rightHandUp) {
+                        let now = millis();
+                        if (now - lastScoreTime > 500) { // 0.5s cooldown
+                            score += 10;
+                            document.getElementById('score').innerText = score;
+                            lastScoreTime = now;
+
+                            // Show PERFECT feedback
+                            let popup = document.getElementById('hit-popup');
+                            popup.style.opacity = '1';
+                            setTimeout(() => { popup.style.opacity = '0'; }, 300);
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
