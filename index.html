@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Dance Arcade - ml5 PoseNet</title>
-    <!-- p5.js Libraries (Matching Snake Game Stack) -->
+    <!-- p5.js Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.sound.min.js"></script>
@@ -87,7 +87,7 @@
         }
 
         .hud-value {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
             color: #facc15;
         }
@@ -107,17 +107,62 @@
             z-index: 4;
             pointer-events: none;
         }
+
+        /* Overlays (Start & End) */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        input {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: #1e293b;
+            color: white;
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 16px;
+            width: 200px;
+        }
+
+        button {
+            padding: 12px 28px;
+            border-radius: 8px;
+            border: none;
+            background: linear-gradient(135deg, #ec4899, #8b5cf6);
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
     </style>
 </head>
 <body>
 
     <h1>AI Dance Arcade</h1>
-    <p style="color: #94a3b8; margin-top: 0;">Raise your hands above your shoulders to score points!</p>
+    <p style="color: #94a3b8; margin-top: 0;">Perform the requested moves to score points!</p>
 
     <div id="game-container">
         <!-- YouTube Background Video -->
         <iframe id="yt-bg" 
-                src="https://www.youtube.com/embed/fJ9rUzIMcZQ?enablejsapi=1&autoplay=1&mute=1&controls=0&loop=1" 
+                src="https://www.youtube.com/embed/fJ9rUzIMcZQ?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" 
                 frameborder="0" 
                 allow="autoplay">
         </iframe>
@@ -129,31 +174,77 @@
                 <div id="score" class="hud-value">0</div>
             </div>
             <div class="hud-card">
-                <div class="hud-title">Tracking Status</div>
-                <div id="status-text" class="hud-value" style="color: #34d399; font-size: 16px;">Loading Model...</div>
+                <div class="hud-title">Target Move</div>
+                <div id="pose-target" class="hud-value" style="color: #34d399;">GET READY</div>
+            </div>
+            <div class="hud-card">
+                <div class="hud-title">Time</div>
+                <div id="timer" class="hud-value" style="color: #f43f5e;">180s</div>
             </div>
         </div>
 
         <div id="hit-popup">PERFECT! +10</div>
+
+        <!-- Start Overlay -->
+        <div id="start-overlay" class="overlay">
+            <h2 style="color: #ec4899; margin-bottom: 10px;">Ready to Dance?</h2>
+            <input type="text" id="player-name" placeholder="Enter Player Name">
+            <button onclick="startGame()">Start 3-Min Game</button>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="end-overlay" class="overlay hidden">
+            <h2 style="color: #facc15; margin-bottom: 10px;">Stage Complete!</h2>
+            <p id="final-stats" style="font-size: 18px; margin-bottom: 5px;"></p>
+            <p id="prize-stats" style="color: #34d399; font-weight: bold; margin-bottom: 20px;"></p>
+            <div id="sheet-status" style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Logging score to Google Sheet...</div>
+            <button onclick="startGame()">Play Again</button>
+        </div>
     </div>
 
     <script>
+        const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
+
         let video;
         let poseNet;
         let poses = [];
         let score = 0;
+        let timeLeft = 180; // 3 Minutes Timer (180 seconds)
+        let gameInterval = null;
+        let isGameActive = false;
         let lastScoreTime = 0;
+        let playerName = "Anonymous";
+
+        // Action moves array
+        const moves = [
+            { 
+                name: "BOTH HANDS UP!", 
+                check: (lw, rw, ls, rs) => (lw.y < min(ls.y, rs.y)) && (rw.y < min(ls.y, rs.y)) 
+            },
+            { 
+                name: "LEFT ARM UP!", 
+                check: (lw, rw, ls, rs) => (lw.y < min(ls.y, rs.y)) && (rw.y > min(ls.y, rs.y)) 
+            },
+            { 
+                name: "RIGHT ARM UP!", 
+                check: (lw, rw, ls, rs) => (rw.y < min(ls.y, rs.y)) && (lw.y > min(ls.y, rs.y)) 
+            },
+            { 
+                name: "T-POSE (ARMS OUT)!", 
+                check: (lw, rw, ls, rs) => Math.abs(lw.y - ls.y) < 40 && Math.abs(rw.y - rs.y) < 40 
+            }
+        ];
+
+        let currentMoveIndex = 0;
 
         function setup() {
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
 
-            // WebCam setup via p5.js
             video = createCapture(VIDEO);
             video.size(640, 480);
             video.hide();
 
-            // Initialize PoseNet with standard settings
             poseNet = ml5.poseNet(video, modelReady);
             poseNet.on('pose', function(results) {
                 poses = results;
@@ -161,23 +252,20 @@
         }
 
         function modelReady() {
-            document.getElementById('status-text').innerText = "READY! RAISE HANDS";
+            console.log("ml5 PoseNet Ready");
         }
 
         function draw() {
             clear();
 
-            // Render mirrored webcam feed
             push();
             translate(width, 0);
             scale(-1, 1);
             tint(255, 130);
             image(video, 0, 0, width, height);
 
-            if (poses.length > 0) {
+            if (poses.length > 0 && isGameActive) {
                 let pose = poses[0].pose;
-
-                // Draw Red Dots on Key Joints
                 for (let i = 0; i < pose.keypoints.length; i++) {
                     let keypoint = pose.keypoints[i];
                     if (keypoint.score > 0.1) {
@@ -189,44 +277,106 @@
             }
             pop();
 
-            // Run direct position-based scoring
-            checkScoring();
+            if (isGameActive) {
+                checkScoring();
+            }
         }
 
         function checkScoring() {
             if (poses.length > 0) {
                 let pose = poses[0].pose;
-
-                // Grab wrist and shoulder points directly
                 let lw = pose.leftWrist;
                 let rw = pose.rightWrist;
                 let ls = pose.leftShoulder;
                 let rs = pose.rightShoulder;
 
-                // If PoseNet sees shoulder points
                 if (ls.confidence > 0.1 || rs.confidence > 0.1) {
-                    
-                    // Shoulder baseline (the higher shoulder on screen)
-                    let shoulderY = min(ls.y, rs.y);
+                    const activeMove = moves[currentMoveIndex];
 
-                    // Check if either wrist is above the shoulder baseline (smaller Y means higher on screen)
-                    let leftHandUp = (lw.confidence > 0.15) && (lw.y < shoulderY);
-                    let rightHandUp = (rw.confidence > 0.15) && (rw.y < shoulderY);
-
-                    if (leftHandUp || rightHandUp) {
+                    if (activeMove.check(lw, rw, ls, rs)) {
                         let now = millis();
-                        if (now - lastScoreTime > 500) { // 0.5s cooldown
+                        if (now - lastScoreTime > 600) { // Cooldown between poses
                             score += 10;
                             document.getElementById('score').innerText = score;
                             lastScoreTime = now;
 
-                            // Show PERFECT feedback
+                            // Show PERFECT animation
                             let popup = document.getElementById('hit-popup');
                             popup.style.opacity = '1';
                             setTimeout(() => { popup.style.opacity = '0'; }, 300);
+
+                            // Cycle to next random action move
+                            currentMoveIndex = (currentMoveIndex + 1) % moves.length;
+                            document.getElementById('pose-target').innerText = moves[currentMoveIndex].name;
                         }
                     }
                 }
+            }
+        }
+
+        function controlYouTube(action) {
+            const iframe = document.getElementById('yt-bg').contentWindow;
+            const func = action === 'play' ? 'playVideo' : 'pauseVideo';
+            iframe.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
+        }
+
+        function startGame() {
+            const inputVal = document.getElementById('player-name').value.trim();
+            playerName = inputVal || "Anonymous";
+            score = 0;
+            timeLeft = 180; // 3 minutes timer
+            isGameActive = true;
+            currentMoveIndex = 0;
+
+            document.getElementById('score').innerText = score;
+            document.getElementById('timer').innerText = `${timeLeft}s`;
+            document.getElementById('pose-target').innerText = moves[currentMoveIndex].name;
+
+            document.getElementById('start-overlay').classList.add('hidden');
+            document.getElementById('end-overlay').classList.add('hidden');
+
+            controlYouTube('play');
+
+            clearInterval(gameInterval);
+            gameInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer').innerText = `${timeLeft}s`;
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        async function endGame() {
+            clearInterval(gameInterval);
+            isGameActive = false;
+
+            controlYouTube('pause');
+
+            const prizesWon = Math.floor(score / 50);
+            const gameResult = score >= 100 ? "Winner" : "Completed";
+
+            document.getElementById('final-stats').innerText = `Player: ${playerName} | Score: ${score}`;
+            document.getElementById('prize-stats').innerText = `Prizes Earned: ${prizesWon}`;
+            document.getElementById('sheet-status').innerText = "Logging score to Google Sheet...";
+
+            document.getElementById('end-overlay').classList.remove('hidden');
+
+            await sendScoreToGoogleSheet(playerName, score, prizesWon, gameResult);
+        }
+
+        async function sendScoreToGoogleSheet(pName, pScore, pPrizes, pResult) {
+            const payload = { playerName: pName, score: pScore, prizes: pPrizes, result: pResult };
+            try {
+                await fetch(GOOGLE_SHEET_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                document.getElementById('sheet-status').innerText = "Score successfully logged to Google Sheet!";
+            } catch (error) {
+                document.getElementById('sheet-status').innerText = "Failed to log score to Google Sheet.";
             }
         }
     </script>
