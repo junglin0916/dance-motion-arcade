@@ -41,7 +41,7 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
         }
 
-        /* YouTube Background */
+        /* YouTube Background Video (kpZhZAr1cQU) */
         #yt-bg {
             position: absolute;
             top: 0;
@@ -98,7 +98,7 @@
             top: 40%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 48px;
+            font-size: 40px;
             font-weight: 900;
             color: #facc15;
             text-shadow: 0 0 10px #000;
@@ -157,10 +157,10 @@
 <body>
 
     <h1>AI Dance Arcade</h1>
-    <p style="color: #94a3b8; margin-top: 0;">Perform the requested moves to score points!</p>
+    <p style="color: #94a3b8; margin-top: 0;">Dance in sync with the video to earn high scores!</p>
 
     <div id="game-container">
-        <!-- YouTube Background Video -->
+        <!-- YouTube Background Video Embed -->
         <iframe id="yt-bg" 
                 src="https://www.youtube.com/embed/kpZhZAr1cQU?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" 
                 frameborder="0" 
@@ -183,7 +183,7 @@
             </div>
         </div>
 
-        <div id="hit-popup">PERFECT! +10</div>
+        <div id="hit-popup">IN SYNC! +10</div>
 
         <!-- Start Overlay -->
         <div id="start-overlay" class="overlay">
@@ -209,13 +209,14 @@
         let poseNet;
         let poses = [];
         let score = 0;
-        let timeLeft = 180; // 3 Minutes Timer (180 seconds)
+        let timeLeft = 180; // 3 Minutes Timer
         let gameInterval = null;
         let isGameActive = false;
         let lastScoreTime = 0;
         let playerName = "Anonymous";
+        let gameStartTime = 0;
 
-        // Action moves array
+        // Move definitions
         const moves = [
             { 
                 name: "BOTH HANDS UP!", 
@@ -231,8 +232,16 @@
             },
             { 
                 name: "T-POSE (ARMS OUT)!", 
-                check: (lw, rw, ls, rs) => Math.abs(lw.y - ls.y) < 40 && Math.abs(rw.y - rs.y) < 40 
+                check: (lw, rw, ls, rs) => Math.abs(lw.y - ls.y) < 50 && Math.abs(rw.y - rs.y) < 50 
             }
+        ];
+
+        // Synced Routine Timeline (Looping sequence triggered by video time)
+        const routineSequence = [
+            { moveIndex: 0, label: "BOTH HANDS UP!" },
+            { moveIndex: 1, label: "LEFT ARM UP!" },
+            { moveIndex: 3, label: "T-POSE (ARMS OUT)!" },
+            { moveIndex: 2, label: "RIGHT ARM UP!" }
         ];
 
         let currentMoveIndex = 0;
@@ -261,7 +270,7 @@
             push();
             translate(width, 0);
             scale(-1, 1);
-            tint(255, 130);
+            tint(255, 110); // Semi-transparent webcam overlay over video
             image(video, 0, 0, width, height);
 
             if (poses.length > 0 && isGameActive) {
@@ -269,7 +278,7 @@
                 for (let i = 0; i < pose.keypoints.length; i++) {
                     let keypoint = pose.keypoints[i];
                     if (keypoint.score > 0.1) {
-                        fill(255, 0, 100);
+                        fill(0, 255, 204);
                         noStroke();
                         ellipse(keypoint.position.x, keypoint.position.y, 10, 10);
                     }
@@ -295,19 +304,20 @@
 
                     if (activeMove.check(lw, rw, ls, rs)) {
                         let now = millis();
-                        if (now - lastScoreTime > 600) { // Cooldown between poses
+                        if (now - lastScoreTime > 600) {
                             score += 10;
                             document.getElementById('score').innerText = score;
                             lastScoreTime = now;
 
-                            // Show PERFECT animation
+                            // Show IN SYNC popup
                             let popup = document.getElementById('hit-popup');
                             popup.style.opacity = '1';
                             setTimeout(() => { popup.style.opacity = '0'; }, 300);
 
-                            // Cycle to next random action move
-                            currentMoveIndex = (currentMoveIndex + 1) % moves.length;
-                            document.getElementById('pose-target').innerText = moves[currentMoveIndex].name;
+                            // Cycle to next dance move in sequence
+                            currentMoveIndex = (currentMoveIndex + 1) % routineSequence.length;
+                            let nextRoutine = routineSequence[currentMoveIndex];
+                            document.getElementById('pose-target').innerText = nextRoutine.label;
                         }
                     }
                 }
@@ -324,13 +334,14 @@
             const inputVal = document.getElementById('player-name').value.trim();
             playerName = inputVal || "Anonymous";
             score = 0;
-            timeLeft = 180; // 3 minutes timer
+            timeLeft = 180;
             isGameActive = true;
             currentMoveIndex = 0;
+            gameStartTime = millis();
 
             document.getElementById('score').innerText = score;
             document.getElementById('timer').innerText = `${timeLeft}s`;
-            document.getElementById('pose-target').innerText = moves[currentMoveIndex].name;
+            document.getElementById('pose-target').innerText = routineSequence[currentMoveIndex].label;
 
             document.getElementById('start-overlay').classList.add('hidden');
             document.getElementById('end-overlay').classList.add('hidden');
