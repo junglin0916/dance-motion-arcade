@@ -27,11 +27,21 @@
             position: relative; width: 640px; height: 480px;
             border: 4px solid #3b82f6; border-radius: 12px;
             overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            background-color: #000;
         }
 
-        #yt-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-        #defaultCanvas0 { position: absolute; top: 0; left: 0; z-index: 2; }
+        /* Layer 1: YouTube Background Video */
+        #yt-bg { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            pointer-events: none; z-index: 1; opacity: 1;
+        }
 
+        /* Layer 2: p5.js Canvas (Webcam Feed & Pose Skeleton) */
+        #defaultCanvas0 { 
+            position: absolute; top: 0; left: 0; z-index: 2; 
+        }
+
+        /* Layer 3: HUD Elements */
         #ui-bar {
             position: absolute; top: 10px; left: 10px; right: 10px;
             display: flex; justify-content: space-between; z-index: 3; pointer-events: none;
@@ -53,6 +63,7 @@
 
         #meter-fill { width: 0%; height: 100%; background: #34d399; transition: width 0.1s ease; }
 
+        /* Layer 4: Overlays */
         .overlay {
             position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85);
             backdrop-filter: blur(4px); display: flex; flex-direction: column;
@@ -137,11 +148,10 @@
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
             
-            // Request Webcam Stream explicitly
+            // Explicit webcam capture initialization
             video = createCapture(VIDEO, () => {
                 document.getElementById('cam-status').innerText = "Camera Active! Loading AI...";
                 
-                // Initialize PoseNet only after Video Stream is guaranteed
                 poseNet = ml5.poseNet(video, () => {
                     document.getElementById('cam-status').innerText = "System Ready! Click LET'S DANCE!";
                 });
@@ -154,15 +164,20 @@
         }
 
         function draw() {
+            // Clear canvas completely every frame to allow the YouTube iframe to show through
             clear();
             
-            // Draw camera feed at all times so user can see tracking status
             if (video) {
                 push();
-                translate(width, 0); scale(-1, 1);
-                tint(255, 120);
+                // Mirror the camera feed horizontally
+                translate(width, 0); 
+                scale(-1, 1);
+                
+                // 50% opacity tint (128 out of 255) for blended mixed-reality effect
+                tint(255, 128); 
                 image(video, 0, 0, width, height);
 
+                // Draw skeleton tracker on top
                 if (poses.length > 0) {
                     drawSkeleton(poses[0].pose);
                 }
@@ -176,10 +191,13 @@
         }
 
         function drawSkeleton(pose) {
+            // Restore full opacity for tracking dots
+            noTint();
             for (let kp of pose.keypoints) {
                 if (kp.score > 0.1) {
-                    fill(0, 255, 204); noStroke();
-                    ellipse(kp.position.x, kp.position.y, 8, 8);
+                    fill(0, 255, 204); 
+                    noStroke();
+                    ellipse(kp.position.x, kp.position.y, 10, 10);
                 }
             }
         }
