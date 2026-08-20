@@ -138,7 +138,7 @@ button:active { transform: scale(0.95); }
 <script>
 const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
 
-let video, poseNet, poses = [];
+let video, poseNet, rawPoses = [];
 let timeLeft = 180, gameInterval = null, isGameActive = false, gameSecondsElapsed = 0;
 
 const players = {
@@ -146,32 +146,27 @@ const players = {
     2: { name: "Player 2", score: 0, lastScoreTime: 0 }
 };
 
-const moves = {
-    "HANDS_UP": {
-        label: "HANDS HIGH IN THE AIR!",
-        check: (p) => p.lw.y < p.ls.y && p.rw.y < p.rs.y
-    },
-    "T_POSE": {
-        label: "ARMS OUT (T-POSE)!",
-        check: (p) => Math.abs(p.lw.y - p.ls.y) < 60 && Math.abs(p.rw.y - p.rs.y) < 60
-    },
-    "KNEE_LIFT": {
-        label: "HIGH KNEE LIFT!",
-        check: (p) => (p.lk.y < p.lh.y - 10) || (p.rk.y < p.rh.y - 10)
-    },
-    "SQUAT": {
-        label: "DANCE SQUAT!",
-        check: (p) => (p.lh.y - p.ls.y) > 80 && (p.rh.y - p.rs.y) > 80
-    }
-};
+// -------------------------------------------------------------------------
+// EXACT YMCA VIDEO CHOREOGRAPHY TIMELINE (in seconds from 0s to 180s)
+// Adjust start/end ranges below to fine-tune sync with the video dancers
+// -------------------------------------------------------------------------
+const ymcaRoutine = [
+    { start: 0,   end: 15,  label: "MARCH IN PLACE!", check: p => Math.abs(p.lk.y - p.rk.y) > 20 },
+    { start: 15,  end: 30,  label: "REACH HIGH (Y)!", check: p => p.lw.y < p.ls.y - 30 && p.rw.y < p.rs.y - 30 },
+    { start: 30,  end: 45,  label: "ARMS CROSS (M)!", check: p => Math.abs(p.lw.x - p.rw.x) < 80 && p.lw.y < p.ls.y },
+    { start: 45,  end: 60,  label: "SIDE BEND (C)!", check: p => Math.abs(p.ls.y - p.rs.y) > 25 },
+    { start: 60,  end: 75,  label: "HEAD TOUCH (A)!", check: p => Math.abs(p.lw.y - p.ls.y) < 40 && Math.abs(p.rw.y - p.rs.y) < 40 },
+    { start: 75,  end: 90,  label: "T-POSE OUT!", check: p => Math.abs(p.lw.y - p.ls.y) < 50 && Math.abs(p.rw.y - p.rs.y) < 50 },
+    { start: 90,  end: 105, label: "HIGH KNEE LIFT!", check: p => (p.lk.y < p.lh.y - 15) || (p.rk.y < p.rh.y - 15) },
+    { start: 105, end: 120, label: "DANCE SQUAT!", check: p => (p.lh.y - p.ls.y) > 90 && (p.rh.y - p.rs.y) > 90 },
+    { start: 120, end: 135, label: "REACH HIGH (Y)!", check: p => p.lw.y < p.ls.y - 30 && p.rw.y < p.rs.y - 30 },
+    { start: 135, end: 150, label: "T-POSE OUT!", check: p => Math.abs(p.lw.y - p.ls.y) < 50 && Math.abs(p.rw.y - p.rs.y) < 50 },
+    { start: 150, end: 180, label: "FREESTYLE FINISH!", check: p => p.lw.y < p.ls.y || p.rw.y < p.rs.y }
+];
 
-// Sequenced explicitly for the YMCA warm-up video structure (12-second block intervals)
-function getScheduledMove(seconds) {
-    let cycleTime = seconds % 24;
-    if (cycleTime < 6) return moves["HANDS_UP"];
-    if (cycleTime < 12) return moves["T_POSE"];
-    if (cycleTime < 18) return moves["KNEE_LIFT"];
-    return moves["SQUAT"];
+function getActiveMove(sec) {
+    let current = ymcaRoutine.find(step => sec >= step.start && sec < step.end);
+    return current || ymcaRoutine[ymcaRoutine.length - 1];
 }
 
 function setup() {
@@ -182,14 +177,24 @@ function setup() {
     video.hide();
 
     poseNet = ml5.poseNet(video, { detectionType: 'multiple', maxPoseDetections: 2 }, () => console.log("PoseNet Ready"));
-    poseNet.on('pose', results => poses = results);
+    poseNet.on('pose', results => rawPoses = results);
 }
 
-function getSortedPoses() {
-    return poses
-        .filter(p => p.pose && p.pose.keypoints)
-        .slice()
-        .sort((a, b) => a.pose.nose.x - b.pose.nose.x);
+// Strictly filter out ghost poses (requires visible shoulders AND hips with >30% confidence)
+function getValidPoses() {
+    return rawPoses
+        .filter(p => {
+            if (!p || !p.pose) return false;
+            let score = p.pose.score;
+            let ls = p.pose.leftShoulder, rs = p.pose.rightShoulder;
+            let lh = p.pose.leftHip, rh = p.pose.rightHip;
+            
+            // Rejects ghosts, background items, or weak detection noise
+            return score > 0.35 && ls && rs && lh && rh && 
+                   ls.confidence > 0.3 && rs.confidence > 0.3;
+        })
+        .map(p => p.pose)
+        .sort((a, b) => a.nose.x - b.nose.x); // Left dancer = P1, Right dancer = P2
 }
 
 function draw() {
@@ -201,14 +206,15 @@ function draw() {
     image(video, 0, 0, width, height);
 
     if (isGameActive) {
-        const sorted = getSortedPoses();
+        const validPoses = getValidPoses();
         const colors = [[52, 211, 153], [244, 114, 182]];
-        for (let i = 0; i < sorted.length && i < 2; i++) {
-            const kp = sorted[i].pose.keypoints;
+        
+        for (let i = 0; i < validPoses.length && i < 2; i++) {
+            const kp = validPoses[i].keypoints;
             fill(colors[i][0], colors[i][1], colors[i][2]);
             noStroke();
             for (let k = 0; k < kp.length; k++) {
-                if (kp[k].score > 0.15) {
+                if (kp[k].score > 0.2) {
                     ellipse(kp[k].position.x, kp[k].position.y, 10, 10);
                 }
             }
@@ -231,17 +237,16 @@ function extractKeypoints(pose) {
 }
 
 function checkScoring() {
-    const activeTargetMove = getScheduledMove(gameSecondsElapsed);
+    const activeTargetMove = getActiveMove(gameSecondsElapsed);
     document.getElementById('pose-target').innerText = activeTargetMove.label;
 
-    const sorted = getSortedPoses();
-    for (let i = 0; i < sorted.length && i < 2; i++) {
+    const validPoses = getValidPoses();
+    for (let i = 0; i < validPoses.length && i < 2; i++) {
         const playerNum = i + 1;
-        const pose = sorted[i].pose;
-        if (!pose.leftShoulder || !pose.rightShoulder) continue;
-
+        const pose = validPoses[i];
+        
         const kp = extractKeypoints(pose);
-        if (activeTargetMove.check(kp)) {
+        if (kp.lw && kp.rw && activeTargetMove.check(kp)) {
             const now = millis();
             const p = players[playerNum];
             if (now - p.lastScoreTime > 600) {
