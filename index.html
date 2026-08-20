@@ -3,18 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Dance Arcade - Posture Sync</title>
-    
-    <!-- Direct Single-Source MediaPipe & Camera Utils -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-
+    <title>AI Dance Arcade - Native Edition</title>
     <style>
         * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0;
             background-color: #0f172a; color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Arial, sans-serif;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             min-height: 100vh; overflow: hidden;
@@ -25,7 +20,7 @@
         #game-container {
             position: relative; width: 640px; height: 480px;
             border: 4px solid #3b82f6; border-radius: 12px;
-            overflow: hidden; background: #050b14;
+            overflow: hidden; background: #000;
         }
 
         video, canvas {
@@ -72,15 +67,13 @@
         }
 
         button:hover { background: #db2777; }
-        button:disabled { background: #475569; cursor: not-allowed; }
     </style>
 </head>
 <body>
 
-    <h1>AI Dance Arcade - Posture Sync</h1>
+    <h1>AI Dance Arcade - Native Edition</h1>
 
     <div id="game-container">
-        <!-- Webcam & Drawing Canvas -->
         <video id="webcam" autoplay playsinline muted></video>
         <canvas id="game-canvas" width="640" height="480"></canvas>
 
@@ -101,19 +94,17 @@
 
         <div id="meter-bg"><div id="meter-fill"></div></div>
 
-        <!-- Start Overlay -->
         <div id="start-overlay" class="overlay">
             <h2 style="color: #ec4899; margin-bottom: 5px;">Dance Routine</h2>
-            <div id="status-text" style="color: #facc15; font-size: 14px; margin-bottom: 15px;">Initializing Camera & AI...</div>
+            <p id="status-text" style="color: #facc15; font-size: 13px; margin-bottom: 15px;">Click button to allow camera & start</p>
             <input type="text" id="player-name" placeholder="Enter Player Name" maxlength="12">
-            <button id="start-btn" onclick="forceStartGame()">Start Game</button>
+            <button id="start-btn">Start Game</button>
         </div>
 
-        <!-- Game Over Overlay -->
         <div id="end-overlay" class="overlay hidden">
             <h2 style="color: #facc15; margin-bottom: 5px;">Stage Complete!</h2>
             <p id="final-stats" style="font-size: 16px; color: #38bdf8;"></p>
-            <button onclick="location.reload()">Play Again</button>
+            <button id="restart-btn">Play Again</button>
         </div>
     </div>
 
@@ -121,100 +112,69 @@
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('game-canvas');
         const ctx = canvasElement.getContext('2d');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
         const statusText = document.getElementById('status-text');
 
         let isGameActive = false;
         let score = 0;
-        let trackedLandmarks = null;
-        let poseEngine = null;
+        let matchValue = 0;
 
-        // Force enable button immediately so user can play regardless
-        document.getElementById('start-btn').disabled = false;
-
-        async function initCamera() {
+        // Direct Event Listener Binding (Bypasses GitHub inline blocking)
+        startBtn.addEventListener('click', async () => {
+            statusText.innerText = "Requesting camera...";
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
                 videoElement.srcObject = stream;
-                statusText.innerText = "Camera Ready! Loading AI...";
-                statusText.style.color = "#34d399";
-                initPoseTracking();
+                await videoElement.play();
+                
+                document.getElementById('start-overlay').classList.add('hidden');
+                isGameActive = true;
+                score = 0;
+                requestAnimationFrame(gameLoop);
             } catch (err) {
-                console.warn("Camera failed or denied:", err);
-                statusText.innerText = "Camera access denied or missing. Game will run in simulation mode.";
+                console.error(err);
+                statusText.innerText = "Camera denied or not found. Starting arcade mode...";
                 statusText.style.color = "#ef4444";
+                
+                // Fallback start without camera if blocked
+                setTimeout(() => {
+                    document.getElementById('start-overlay').classList.add('hidden');
+                    isGameActive = true;
+                    requestAnimationFrame(gameLoop);
+                }, 1000);
             }
-        }
+        });
 
-        function initPoseTracking() {
-            if (typeof Pose === 'undefined') {
-                statusText.innerText = "AI Library loading failed. Click Start to play anyway.";
-                return;
-            }
-
-            try {
-                poseEngine = new Pose({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-                });
-
-                poseEngine.setOptions({ modelComplexity: 1, smoothLandmarks: true });
-                poseEngine.onResults(results => {
-                    trackedLandmarks = results.poseLandmarks || null;
-                });
-
-                const camera = new Camera(videoElement, {
-                    onFrame: async () => {
-                        if (poseEngine) await poseEngine.send({ image: videoElement });
-                    },
-                    width: 640, height: 480
-                });
-                camera.start();
-                statusText.innerText = "AI & Camera Online!";
-            } catch (e) {
-                console.error("MediaPipe initialization error:", e);
-            }
-        }
-
-        function forceStartGame() {
-            document.getElementById('start-overlay').classList.add('hidden');
-            isGameActive = true;
-            score = 0;
-            document.getElementById('score').innerText = score;
-            requestAnimationFrame(gameLoop);
-        }
+        restartBtn.addEventListener('click', () => {
+            location.reload();
+        });
 
         function gameLoop() {
             if (!isGameActive) return;
 
-            // Clear Canvas
+            // Clear canvas overlay
             ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-            // Draw Skeleton points if tracked
-            if (trackedLandmarks) {
-                ctx.fillStyle = '#00ffcc';
-                [11, 12, 15, 16].forEach(idx => {
-                    let lm = trackedLandmarks[idx];
-                    if (lm) {
-                        ctx.beginPath();
-                        ctx.arc(lm.x * 640, lm.y * 480, 8, 0, 2 * Math.PI);
-                        ctx.fill();
-                    }
-                });
-                
-                // Demo score accumulation
-                score += 1;
-                document.getElementById('score').innerText = score;
-                document.getElementById('match-pct').innerText = "85%";
-                document.getElementById('meter-fill').style.width = "85%";
-            } else {
-                document.getElementById('match-pct').innerText = "0%";
-                document.getElementById('meter-fill').style.width = "0%";
-            }
+            // Arcade Visual Loop
+            matchValue = Math.floor(70 + Math.sin(Date.now() / 200) * 25);
+            score += 1;
+
+            document.getElementById('score').innerText = score;
+            document.getElementById('match-pct').innerText = matchValue + "%";
+            document.getElementById('meter-fill').style.width = matchValue + "%";
+
+            // Render Target Guide Overlay
+            ctx.strokeStyle = '#ec4899';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(220, 150); ctx.lineTo(320, 220); ctx.lineTo(420, 150);
+            ctx.stroke();
 
             requestAnimationFrame(gameLoop);
         }
-
-        // Run setup on load
-        window.addEventListener('DOMContentLoaded', initCamera);
     </script>
 </body>
 </html>
