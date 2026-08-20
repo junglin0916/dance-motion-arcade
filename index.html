@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Dance Arcade - ml5 PoseNet</title>
+<title>AI Dance Arcade - ml5 PoseNet Duet</title>
 
 <!-- p5.js Libraries -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
@@ -15,152 +14,72 @@
 
 <style>
 body {
-  margin: 0;
-  padding: 0;
-  background-color: #0f172a;
-  color: #ffffff;
-  font-family: Arial, sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
+    margin: 0; padding: 0;
+    background-color: #0f172a; color: #ffffff;
+    font-family: Arial, sans-serif;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh;
 }
-h1 {
-  margin: 10px 0 5px 0;
-  font-size: 28px;
-  color: #ec4899;
-}
+h1 { margin: 10px 0 5px 0; font-size: 28px; color: #ec4899; }
+
 #game-container {
-  position: relative;
-  width: 640px;
-  height: 480px;
-  border: 4px solid #3b82f6;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    position: relative; width: 640px; height: 480px;
+    border: 4px solid #3b82f6; border-radius: 12px;
+    overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
 }
-/* YouTube Background Video */
-#yt-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
-}
-/* p5 Canvas Overlay */
-#defaultCanvas0 {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-}
-/* UI Score Banner - now two cards, one per dancer */
+
+#yt-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+#defaultCanvas0 { position: absolute; top: 0; left: 0; z-index: 2; }
+
 #ui-bar {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  display: flex;
-  justify-content: space-between;
-  z-index: 3;
-  pointer-events: none;
-  gap: 8px;
+    position: absolute; top: 10px; left: 10px; right: 10px;
+    display: flex; justify-content: space-between; z-index: 3;
+    pointer-events: none; gap: 8px;
 }
+
 .hud-card {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid #475569;
-  padding: 6px 12px;
-  border-radius: 8px;
-  text-align: center;
-  min-width: 92px;
+    background: rgba(15, 23, 42, 0.85); border: 1px solid #475569;
+    padding: 6px 12px; border-radius: 8px; text-align: center; min-width: 92px;
 }
 .hud-card.player1 { border-color: #34d399; }
 .hud-card.player2 { border-color: #f472b6; }
 .hud-card.leader { box-shadow: 0 0 10px 2px #facc15; }
-.hud-title {
-  font-size: 9px;
-  color: #94a3b8;
-  text-transform: uppercase;
-}
-.hud-name {
-  font-size: 11px;
-  font-weight: bold;
-  color: #e2e8f0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
-}
-.hud-value {
-  font-size: 22px;
-  font-weight: bold;
-  color: #facc15;
-}
-#center-hud {
-  text-align: center;
-}
-#timer {
-  font-size: 18px;
-  font-weight: bold;
-  color: #f43f5e;
-}
-#pose-target {
-  font-size: 15px;
-  font-weight: bold;
-  color: #34d399;
-}
-/* Hit Popup FX */
+
+.hud-title { font-size: 9px; color: #94a3b8; text-transform: uppercase; }
+.hud-name { font-size: 11px; font-weight: bold; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+.hud-value { font-size: 22px; font-weight: bold; color: #facc15; }
+
+#center-hud { text-align: center; }
+#timer { font-size: 18px; font-weight: bold; color: #f43f5e; }
+#pose-target { font-size: 15px; font-weight: bold; color: #34d399; }
+
 .hit-popup {
-  position: absolute;
-  top: 40%;
-  font-size: 30px;
-  font-weight: 900;
-  text-shadow: 0 0 12px #000;
-  opacity: 0;
-  transition: opacity 0.15s ease-in-out;
-  z-index: 4;
-  pointer-events: none;
+    position: absolute; top: 40%; font-size: 30px; font-weight: 900;
+    text-shadow: 0 0 12px #000; opacity: 0; transition: opacity 0.15s ease-in-out;
+    z-index: 4; pointer-events: none;
 }
 #hit-popup-1 { left: 25%; transform: translate(-50%, -50%); color: #34d399; }
 #hit-popup-2 { left: 75%; transform: translate(-50%, -50%); color: #f472b6; }
 
-/* Overlays (Start & End) */
 .overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(4px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
+    position: absolute; inset: 0; background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(4px); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 10;
 }
 .hidden { display: none !important; }
+
 input {
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid #475569;
-  background: #1e293b;
-  color: white;
-  text-align: center;
-  margin-bottom: 10px;
-  font-size: 16px;
-  width: 200px;
+    padding: 10px; border-radius: 8px; border: 1px solid #475569;
+    background: #1e293b; color: white; text-align: center; margin-bottom: 10px;
+    font-size: 16px; width: 200px;
 }
+
 button {
-  padding: 12px 28px;
-  border-radius: 8px;
-  border: none;
-  background: linear-gradient(135deg, #ec4899, #8b5cf6);
-  color: white;
-  font-weight: bold;
-  font-size: 16px;
-  cursor: pointer;
-  transition: transform 0.1s ease;
+    padding: 12px 28px; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #ec4899, #8b5cf6);
+    color: white; font-weight: bold; font-size: 16px; cursor: pointer;
+    transition: transform 0.1s ease;
 }
 button:active { transform: scale(0.95); }
 </style>
@@ -168,319 +87,257 @@ button:active { transform: scale(0.95); }
 <body>
 
 <h1>AI Dance Arcade</h1>
-<p style="color: #94a3b8; margin-top: 0;">Two dancers, one camera — match the moves and see who scores higher!</p>
+<p style="color: #94a3b8; margin-top: 0;">Two dancers, one camera — match the YMCA moves in sync!</p>
 
 <div id="game-container">
+    <iframe id="yt-bg"
+        src="https://www.youtube.com/embed/IVO3bpoOqUs?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1&playlist=IVO3bpoOqUs"
+        frameborder="0" allow="autoplay">
+    </iframe>
 
-  <!-- YouTube Background Video: YMCA Dance warm-up routine -->
-  <iframe id="yt-bg"
-    src="https://www.youtube.com/embed/IVO3bpoOqUs?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1&playlist=IVO3bpoOqUs"
-    frameborder="0"
-    allow="autoplay">
-  </iframe>
-
-  <!-- HUD Interface -->
-  <div id="ui-bar">
-    <div class="hud-card player1" id="hud-p1">
-      <div class="hud-title">Player 1 (Left)</div>
-      <div class="hud-name" id="p1-name">—</div>
-      <div id="score1" class="hud-value">0</div>
+    <div id="ui-bar">
+        <div class="hud-card player1" id="hud-p1">
+            <div class="hud-title">Player 1 (Left)</div>
+            <div class="hud-name" id="p1-name">—</div>
+            <div id="score1" class="hud-value">0</div>
+        </div>
+        <div id="center-hud">
+            <div class="hud-title">Target Move</div>
+            <div id="pose-target">GET READY</div>
+            <div id="timer">180s</div>
+        </div>
+        <div class="hud-card player2" id="hud-p2">
+            <div class="hud-title">Player 2 (Right)</div>
+            <div class="hud-name" id="p2-name">—</div>
+            <div id="score2" class="hud-value">0</div>
+        </div>
     </div>
-    <div id="center-hud">
-      <div class="hud-title">Target Move</div>
-      <div id="pose-target">GET READY</div>
-      <div id="timer">180s</div>
+
+    <div id="hit-popup-1" class="hit-popup">+10</div>
+    <div id="hit-popup-2" class="hit-popup">+10</div>
+
+    <div id="start-overlay" class="overlay">
+        <h2 style="color: #ec4899; margin-bottom: 10px;">Ready to Dance?</h2>
+        <input type="text" id="player1-name" placeholder="Player 1 name">
+        <input type="text" id="player2-name" placeholder="Player 2 name">
+        <p style="font-size: 12px; color:#94a3b8; max-width:260px; text-align:center;">
+            Stand side by side — Player 1 on the left, Player 2 on the right.
+        </p>
+        <button onclick="startGame()">Start Game</button>
     </div>
-    <div class="hud-card player2" id="hud-p2">
-      <div class="hud-title">Player 2 (Right)</div>
-      <div class="hud-name" id="p2-name">—</div>
-      <div id="score2" class="hud-value">0</div>
+
+    <div id="end-overlay" class="overlay hidden">
+        <h2 style="color: #facc15; margin-bottom: 10px;">Stage Complete!</h2>
+        <p id="final-stats" style="font-size: 16px; margin-bottom: 5px; text-align:center;"></p>
+        <p id="winner-stats" style="color: #34d399; font-weight: bold; margin-bottom: 20px;"></p>
+        <div id="sheet-status" style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Logging scores to Google Sheet...</div>
+        <button onclick="startGame()">Play Again</button>
     </div>
-  </div>
-
-  <div id="hit-popup-1" class="hit-popup">+10</div>
-  <div id="hit-popup-2" class="hit-popup">+10</div>
-
-  <!-- Start Overlay -->
-  <div id="start-overlay" class="overlay">
-    <h2 style="color: #ec4899; margin-bottom: 10px;">Ready to Dance?</h2>
-    <input type="text" id="player1-name" placeholder="Player 1 name">
-    <input type="text" id="player2-name" placeholder="Player 2 name">
-    <p style="font-size: 12px; color:#94a3b8; max-width:260px; text-align:center;">
-      Stand side by side so the camera can see both of you — Player 1 on the left, Player 2 on the right.
-    </p>
-    <button onclick="startGame()">Start 3-Min Game</button>
-  </div>
-
-  <!-- Game Over Overlay -->
-  <div id="end-overlay" class="overlay hidden">
-    <h2 style="color: #facc15; margin-bottom: 10px;">Stage Complete!</h2>
-    <p id="final-stats" style="font-size: 16px; margin-bottom: 5px; text-align:center;"></p>
-    <p id="winner-stats" style="color: #34d399; font-weight: bold; margin-bottom: 20px;"></p>
-    <div id="sheet-status" style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Logging scores to Google Sheet...</div>
-    <button onclick="startGame()">Play Again</button>
-  </div>
-
 </div>
 
 <script>
 const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
 
-let video;
-let poseNet;
-let poses = [];
-let timeLeft = 180;
-let gameInterval = null;
-let isGameActive = false;
-let gameSecondsElapsed = 0;
+let video, poseNet, poses = [];
+let timeLeft = 180, gameInterval = null, isGameActive = false, gameSecondsElapsed = 0;
 
-// Two independent dancers
 const players = {
-  1: { name: "Player 1", score: 0, lastScoreTime: 0 },
-  2: { name: "Player 2", score: 0, lastScoreTime: 0 }
+    1: { name: "Player 1", score: 0, lastScoreTime: 0 },
+    2: { name: "Player 2", score: 0, lastScoreTime: 0 }
 };
 
-// --------------------------------------------------------------------
-// FULL-BODY MOVE SET
-// Each move now requires BOTH an upper-body pose AND a lower-body pose
-// at the same time, instead of just an arm position like the old version.
-//
-// NOTE: These are matched to the general feel/tempo of a warm-up dance
-// (arms-overhead moves, knee lifts, side lunges, jumping-jack style leg
-// spreads) rather than exact frame-by-frame timestamps pulled from the
-// video itself — I can't extract video frames directly. Watch the video
-// once, then adjust the "cycleTime" thresholds below (currently a 16s
-// loop split into four 4s beats) to line up with the real routine.
-// --------------------------------------------------------------------
 const moves = {
-  "ARMS_UP_KNEE_UP": {
-    label: "ARMS UP + RIGHT KNEE UP!",
-    check: (p) => {
-      const armsUp = (p.lw.y < min(p.ls.y, p.rs.y) + 20) && (p.rw.y < min(p.ls.y, p.rs.y) + 20);
-      const kneeUp = p.rk.y < p.rh.y - 15; // right knee lifted above hip line
-      return armsUp && kneeUp;
+    "HANDS_UP": {
+        label: "HANDS HIGH IN THE AIR!",
+        check: (p) => p.lw.y < p.ls.y && p.rw.y < p.rs.y
+    },
+    "T_POSE": {
+        label: "ARMS OUT (T-POSE)!",
+        check: (p) => Math.abs(p.lw.y - p.ls.y) < 60 && Math.abs(p.rw.y - p.rs.y) < 60
+    },
+    "KNEE_LIFT": {
+        label: "HIGH KNEE LIFT!",
+        check: (p) => (p.lk.y < p.lh.y - 10) || (p.rk.y < p.rh.y - 10)
+    },
+    "SQUAT": {
+        label: "DANCE SQUAT!",
+        check: (p) => (p.lh.y - p.ls.y) > 80 && (p.rh.y - p.rs.y) > 80
     }
-  },
-  "SQUAT_T_POSE": {
-    label: "SQUAT + ARMS OUT (T-POSE)!",
-    check: (p) => {
-      const tPose = Math.abs(p.lw.y - p.ls.y) < 90 && Math.abs(p.rw.y - p.rs.y) < 90;
-      const squat = (p.lk.y - p.lh.y) < 70 && (p.rk.y - p.rh.y) < 70; // knees bent, hips dropped closer to knee height
-      return tPose && squat;
-    }
-  },
-  "SIDE_LUNGE_ARM": {
-    label: "SIDE LUNGE + ARM RAISE!",
-    check: (p) => {
-      const armUp = (p.lw.y < p.ls.y - 10) || (p.rw.y < p.rs.y - 10);
-      const hipCenterX = (p.lh.x + p.rh.x) / 2;
-      const lunge = Math.abs(p.la.x - hipCenterX) > 60 || Math.abs(p.ra.x - hipCenterX) > 60; // ankle pushed out to the side
-      return armUp && lunge;
-    }
-  },
-  "JUMPING_JACK": {
-    label: "JUMPING JACK!",
-    check: (p) => {
-      const armsWide = (p.lw.y < p.ls.y) && (p.rw.y < p.rs.y) && (Math.abs(p.lw.x - p.rw.x) > 140);
-      const legsWide = Math.abs(p.la.x - p.ra.x) > 90;
-      return armsWide && legsWide;
-    }
-  }
 };
 
+// Sequenced explicitly for the YMCA warm-up video structure (12-second block intervals)
 function getScheduledMove(seconds) {
-  let cycleTime = seconds % 16; // 16-second looping choreography — adjust to match the real video
-  if (cycleTime < 4) return moves["ARMS_UP_KNEE_UP"];
-  if (cycleTime < 8) return moves["SQUAT_T_POSE"];
-  if (cycleTime < 12) return moves["SIDE_LUNGE_ARM"];
-  return moves["JUMPING_JACK"];
+    let cycleTime = seconds % 24;
+    if (cycleTime < 6) return moves["HANDS_UP"];
+    if (cycleTime < 12) return moves["T_POSE"];
+    if (cycleTime < 18) return moves["KNEE_LIFT"];
+    return moves["SQUAT"];
 }
 
 function setup() {
-  let canvas = createCanvas(640, 480);
-  canvas.parent('game-container');
-  video = createCapture(VIDEO);
-  video.size(640, 480);
-  video.hide();
+    let canvas = createCanvas(640, 480);
+    canvas.parent('game-container');
+    video = createCapture(VIDEO);
+    video.size(640, 480);
+    video.hide();
 
-  // detectionType:'multiple' lets PoseNet track up to two dancers at once
-  poseNet = ml5.poseNet(video, { detectionType: 'multiple', maxPoseDetections: 2 }, modelReady);
-  poseNet.on('pose', function(results) {
-    poses = results;
-  });
+    poseNet = ml5.poseNet(video, { detectionType: 'multiple', maxPoseDetections: 2 }, () => console.log("PoseNet Ready"));
+    poseNet.on('pose', results => poses = results);
 }
 
-function modelReady() {
-  console.log("ml5 PoseNet Ready (multi-pose)");
-}
-
-// Sort detected poses left-to-right so Player 1 = left dancer, Player 2 = right dancer
 function getSortedPoses() {
-  return poses
-    .filter(p => p.pose.keypoints.length > 0)
-    .slice()
-    .sort((a, b) => a.pose.nose.x - b.pose.nose.x);
+    return poses
+        .filter(p => p.pose && p.pose.keypoints)
+        .slice()
+        .sort((a, b) => a.pose.nose.x - b.pose.nose.x);
 }
 
 function draw() {
-  clear();
-  push();
-  translate(width, 0);
-  scale(-1, 1);
-  tint(255, 120);
-  image(video, 0, 0, width, height);
+    clear();
+    push();
+    translate(width, 0);
+    scale(-1, 1);
+    tint(255, 120);
+    image(video, 0, 0, width, height);
 
-  if (isGameActive) {
-    const sorted = getSortedPoses();
-    const colors = [[52, 211, 153], [244, 114, 182]]; // player1 green, player2 pink
-    for (let i = 0; i < sorted.length && i < 2; i++) {
-      const kp = sorted[i].pose.keypoints;
-      fill(colors[i][0], colors[i][1], colors[i][2]);
-      noStroke();
-      for (let k = 0; k < kp.length; k++) {
-        if (kp[k].score > 0.1) {
-          ellipse(kp[k].position.x, kp[k].position.y, 10, 10);
+    if (isGameActive) {
+        const sorted = getSortedPoses();
+        const colors = [[52, 211, 153], [244, 114, 182]];
+        for (let i = 0; i < sorted.length && i < 2; i++) {
+            const kp = sorted[i].pose.keypoints;
+            fill(colors[i][0], colors[i][1], colors[i][2]);
+            noStroke();
+            for (let k = 0; k < kp.length; k++) {
+                if (kp[k].score > 0.15) {
+                    ellipse(kp[k].position.x, kp[k].position.y, 10, 10);
+                }
+            }
         }
-      }
     }
-  }
-  pop();
+    pop();
 
-  if (isGameActive) {
-    checkScoring();
-  }
+    if (isGameActive) {
+        checkScoring();
+    }
 }
 
-// Pull out the keypoints checkScoring needs, forgiving if some are missing
 function extractKeypoints(pose) {
-  return {
-    lw: pose.leftWrist, rw: pose.rightWrist,
-    ls: pose.leftShoulder, rs: pose.rightShoulder,
-    lh: pose.leftHip, rh: pose.rightHip,
-    lk: pose.leftKnee, rk: pose.rightKnee,
-    la: pose.leftAnkle, ra: pose.rightAnkle
-  };
-}
-
-function keypointsConfident(pose) {
-  const need = ['leftShoulder','rightShoulder','leftHip','rightHip','leftKnee','rightKnee','leftAnkle','rightAnkle','leftWrist','rightWrist'];
-  return need.every(n => pose[n] && pose[n].confidence > 0.05);
+    return {
+        lw: pose.leftWrist, rw: pose.rightWrist,
+        ls: pose.leftShoulder, rs: pose.rightShoulder,
+        lh: pose.leftHip, rh: pose.rightHip,
+        lk: pose.leftKnee, rk: pose.rightKnee
+    };
 }
 
 function checkScoring() {
-  const activeTargetMove = getScheduledMove(gameSecondsElapsed);
-  document.getElementById('pose-target').innerText = activeTargetMove.label;
+    const activeTargetMove = getScheduledMove(gameSecondsElapsed);
+    document.getElementById('pose-target').innerText = activeTargetMove.label;
 
-  const sorted = getSortedPoses();
-  for (let i = 0; i < sorted.length && i < 2; i++) {
-    const playerNum = i + 1;
-    const pose = sorted[i].pose;
-    if (!keypointsConfident(pose)) continue;
+    const sorted = getSortedPoses();
+    for (let i = 0; i < sorted.length && i < 2; i++) {
+        const playerNum = i + 1;
+        const pose = sorted[i].pose;
+        if (!pose.leftShoulder || !pose.rightShoulder) continue;
 
-    const kp = extractKeypoints(pose);
-    if (activeTargetMove.check(kp)) {
-      const now = millis();
-      const p = players[playerNum];
-      if (now - p.lastScoreTime > 700) { // cooldown between points
-        p.score += 10;
-        document.getElementById('score' + playerNum).innerText = p.score;
-        p.lastScoreTime = now;
+        const kp = extractKeypoints(pose);
+        if (activeTargetMove.check(kp)) {
+            const now = millis();
+            const p = players[playerNum];
+            if (now - p.lastScoreTime > 600) {
+                p.score += 10;
+                document.getElementById('score' + playerNum).innerText = p.score;
+                p.lastScoreTime = now;
 
-        const popup = document.getElementById('hit-popup-' + playerNum);
-        popup.style.opacity = '1';
-        setTimeout(() => { popup.style.opacity = '0'; }, 350);
+                const popup = document.getElementById('hit-popup-' + playerNum);
+                popup.style.opacity = '1';
+                setTimeout(() => { popup.style.opacity = '0'; }, 350);
 
-        updateLeaderHighlight();
-      }
+                updateLeaderHighlight();
+            }
+        }
     }
-  }
 }
 
 function updateLeaderHighlight() {
-  const hud1 = document.getElementById('hud-p1');
-  const hud2 = document.getElementById('hud-p2');
-  hud1.classList.remove('leader');
-  hud2.classList.remove('leader');
-  if (players[1].score > players[2].score) hud1.classList.add('leader');
-  else if (players[2].score > players[1].score) hud2.classList.add('leader');
+    const hud1 = document.getElementById('hud-p1');
+    const hud2 = document.getElementById('hud-p2');
+    hud1.classList.remove('leader');
+    hud2.classList.remove('leader');
+    if (players[1].score > players[2].score) hud1.classList.add('leader');
+    else if (players[2].score > players[1].score) hud2.classList.add('leader');
 }
 
 function controlYouTube(action) {
-  const iframe = document.getElementById('yt-bg').contentWindow;
-  const func = action === 'play' ? 'playVideo' : 'pauseVideo';
-  iframe.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
+    const iframe = document.getElementById('yt-bg').contentWindow;
+    const func = action === 'play' ? 'playVideo' : 'pauseVideo';
+    iframe.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
 }
 
 function startGame() {
-  const n1 = document.getElementById('player1-name').value.trim();
-  const n2 = document.getElementById('player2-name').value.trim();
-  players[1] = { name: n1 || "Player 1", score: 0, lastScoreTime: 0 };
-  players[2] = { name: n2 || "Player 2", score: 0, lastScoreTime: 0 };
+    const n1 = document.getElementById('player1-name').value.trim();
+    const n2 = document.getElementById('player2-name').value.trim();
+    players[1] = { name: n1 || "Player 1", score: 0, lastScoreTime: 0 };
+    players[2] = { name: n2 || "Player 2", score: 0, lastScoreTime: 0 };
 
-  document.getElementById('p1-name').innerText = players[1].name;
-  document.getElementById('p2-name').innerText = players[2].name;
-  document.getElementById('score1').innerText = 0;
-  document.getElementById('score2').innerText = 0;
-  document.getElementById('hud-p1').classList.remove('leader');
-  document.getElementById('hud-p2').classList.remove('leader');
+    document.getElementById('p1-name').innerText = players[1].name;
+    document.getElementById('p2-name').innerText = players[2].name;
+    document.getElementById('score1').innerText = 0;
+    document.getElementById('score2').innerText = 0;
+    document.getElementById('hud-p1').classList.remove('leader');
+    document.getElementById('hud-p2').classList.remove('leader');
 
-  timeLeft = 180;
-  gameSecondsElapsed = 0;
-  isGameActive = true;
-  document.getElementById('timer').innerText = `${timeLeft}s`;
-  document.getElementById('start-overlay').classList.add('hidden');
-  document.getElementById('end-overlay').classList.add('hidden');
-
-  controlYouTube('play');
-
-  clearInterval(gameInterval);
-  gameInterval = setInterval(() => {
-    timeLeft--;
-    gameSecondsElapsed++;
+    timeLeft = 180;
+    gameSecondsElapsed = 0;
+    isGameActive = true;
     document.getElementById('timer').innerText = `${timeLeft}s`;
-    if (timeLeft <= 0) {
-      endGame();
-    }
-  }, 1000);
+    document.getElementById('start-overlay').classList.add('hidden');
+    document.getElementById('end-overlay').classList.add('hidden');
+
+    controlYouTube('play');
+
+    clearInterval(gameInterval);
+    gameInterval = setInterval(() => {
+        timeLeft--;
+        gameSecondsElapsed++;
+        document.getElementById('timer').innerText = `${timeLeft}s`;
+        if (timeLeft <= 0) endGame();
+    }, 1000);
 }
 
 async function endGame() {
-  clearInterval(gameInterval);
-  isGameActive = false;
-  controlYouTube('pause');
+    clearInterval(gameInterval);
+    isGameActive = false;
+    controlYouTube('pause');
 
-  const p1 = players[1], p2 = players[2];
-  let winnerText;
-  if (p1.score > p2.score) winnerText = `🏆 ${p1.name} wins!`;
-  else if (p2.score > p1.score) winnerText = `🏆 ${p2.name} wins!`;
-  else winnerText = `🤝 It's a tie!`;
+    const p1 = players[1], p2 = players[2];
+    let winnerText = p1.score > p2.score ? `🏆 ${p1.name} wins!` : (p2.score > p1.score ? `🏆 ${p2.name} wins!` : `🤝 It's a tie!`);
 
-  document.getElementById('final-stats').innerText =
-    `${p1.name}: ${p1.score} pts   |   ${p2.name}: ${p2.score} pts`;
-  document.getElementById('winner-stats').innerText = winnerText;
-  document.getElementById('sheet-status').innerText = "Logging scores to Google Sheet...";
-  document.getElementById('end-overlay').classList.remove('hidden');
+    document.getElementById('final-stats').innerText = `${p1.name}: ${p1.score} pts | ${p2.name}: ${p2.score} pts`;
+    document.getElementById('winner-stats').innerText = winnerText;
+    document.getElementById('sheet-status').innerText = "Logging scores to Google Sheet...";
+    document.getElementById('end-overlay').classList.remove('hidden');
 
-  await sendScoresToGoogleSheet(p1, p2);
+    await sendScoresToGoogleSheet(p1, p2);
 }
 
 async function sendScoresToGoogleSheet(p1, p2) {
-  const payload = {
-    player1Name: p1.name, player1Score: p1.score,
-    player2Name: p2.name, player2Score: p2.score,
-    winner: p1.score === p2.score ? "Tie" : (p1.score > p2.score ? p1.name : p2.name)
-  };
-  try {
-    await fetch(GOOGLE_SHEET_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    document.getElementById('sheet-status').innerText = "Scores successfully logged to Google Sheet!";
-  } catch (error) {
-    document.getElementById('sheet-status').innerText = "Failed to log scores to Google Sheet.";
-  }
+    const payload = {
+        player1Name: p1.name, player1Score: p1.score,
+        player2Name: p2.name, player2Score: p2.score,
+        winner: p1.score === p2.score ? "Tie" : (p1.score > p2.score ? p1.name : p2.name)
+    };
+    try {
+        await fetch(GOOGLE_SHEET_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        document.getElementById('sheet-status').innerText = "Scores successfully logged to Google Sheet!";
+    } catch (error) {
+        document.getElementById('sheet-status').innerText = "Failed to log scores to Google Sheet.";
+    }
 }
 </script>
 </body>
