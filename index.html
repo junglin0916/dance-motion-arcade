@@ -54,7 +54,7 @@
         #meter-fill { width: 0%; height: 100%; background: #34d399; transition: width 0.1s ease; }
 
         .overlay {
-            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9);
+            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85);
             backdrop-filter: blur(4px); display: flex; flex-direction: column;
             align-items: center; justify-content: center; z-index: 10;
         }
@@ -69,6 +69,10 @@
         }
 
         .dance-btn:hover { transform: scale(1.05); }
+        
+        #cam-status {
+            position: absolute; bottom: 10px; font-size: 12px; color: #34d399;
+        }
     </style>
 </head>
 <body>
@@ -103,6 +107,7 @@
         <div id="start-overlay" class="overlay">
             <h2 style="color: #ec4899; margin-bottom: 20px;">Ready to Move?</h2>
             <button class="dance-btn" onclick="startGame()">LET'S DANCE!</button>
+            <div id="cam-status">Initializing Camera & AI Model...</div>
         </div>
 
         <!-- End Overlay -->
@@ -114,8 +119,6 @@
     </div>
 
     <script>
-        const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
-
         let video, poseNet, poses = [];
         let score = 0, timeLeft = 180, isGameActive = false, lastScoreTime = 0;
         let elapsedSeconds = 0;
@@ -133,25 +136,38 @@
         function setup() {
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
-            video = createCapture(VIDEO);
+            
+            // Request Webcam Stream explicitly
+            video = createCapture(VIDEO, () => {
+                document.getElementById('cam-status').innerText = "Camera Active! Loading AI...";
+                
+                // Initialize PoseNet only after Video Stream is guaranteed
+                poseNet = ml5.poseNet(video, () => {
+                    document.getElementById('cam-status').innerText = "System Ready! Click LET'S DANCE!";
+                });
+                
+                poseNet.on('pose', results => poses = results);
+            });
+
             video.size(640, 480);
             video.hide();
-
-            poseNet = ml5.poseNet(video, () => console.log("PoseNet Ready"));
-            poseNet.on('pose', results => poses = results);
         }
 
         function draw() {
             clear();
-            push();
-            translate(width, 0); scale(-1, 1);
-            tint(255, 120);
-            image(video, 0, 0, width, height);
+            
+            // Draw camera feed at all times so user can see tracking status
+            if (video) {
+                push();
+                translate(width, 0); scale(-1, 1);
+                tint(255, 120);
+                image(video, 0, 0, width, height);
 
-            if (poses.length > 0 && isGameActive) {
-                drawSkeleton(poses[0].pose);
+                if (poses.length > 0) {
+                    drawSkeleton(poses[0].pose);
+                }
+                pop();
             }
-            pop();
 
             if (isGameActive) {
                 updateRoutineProgress();
@@ -234,7 +250,7 @@
             }, 1000);
         }
 
-        async function endGame() {
+        function endGame() {
             isGameActive = false;
             let iframe = document.getElementById('yt-bg').contentWindow;
             iframe.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
