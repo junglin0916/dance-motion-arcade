@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Dance Arcade - Posture Sync</title>
-    <!-- p5.js Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.sound.min.js"></script>
-    <!-- ml5.js Library -->
-    <script src="https://unpkg.com/ml5@0.4.2/dist/ml5.min.js"></script>
     
+    <!-- p5.js Library for Game Rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+    
+    <!-- Google MediaPipe Pose Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
     <style>
         body {
             margin: 0; padding: 0;
@@ -30,13 +31,16 @@
             background: #000;
         }
 
-        /* YouTube Background (z-index 1) */
+        /* YouTube Background Video */
         #yt-bg { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            pointer-events: none; z-index: 1; opacity: 0.65;
+            pointer-events: none; z-index: 1; opacity: 0.5;
         }
 
-        /* Canvas Overlay (z-index 2) */
+        /* Hidden HTML5 Video element for webcam capture */
+        #webcam-video { display: none; }
+
+        /* p5 Canvas Layer */
         #defaultCanvas0 { 
             position: absolute !important; top: 0; left: 0; z-index: 2; 
             pointer-events: none;
@@ -83,7 +87,8 @@
             transition: transform 0.1s ease;
         }
 
-        button:hover { transform: scale(1.05); }
+        button:hover:not(:disabled) { transform: scale(1.05); }
+        button:disabled { background: #475569; cursor: not-allowed; box-shadow: none; }
 
         .leaderboard {
             width: 80%; background: rgba(30, 41, 59, 0.8); border-radius: 8px;
@@ -100,8 +105,11 @@
     <p style="color: #94a3b8; margin-top: 0;">Copy the posture vectors on screen to build high scores!</p>
 
     <div id="game-container">
-        <!-- Background Video (wESUmsQZWVI) -->
+        <!-- Background Video -->
         <iframe id="yt-bg" src="https://www.youtube.com/embed/wESUmsQZWVI?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" frameborder="0"></iframe>
+
+        <!-- Native hidden camera feed -->
+        <video id="webcam-video" width="640" height="480" autoplay playsinline muted></video>
 
         <div id="ui-bar">
             <div class="hud-card">
@@ -124,7 +132,7 @@
 
         <div id="start-overlay" class="overlay">
             <h2 style="color: #ec4899; margin-bottom: 10px;">Dance Posture Routine</h2>
-            <div id="camera-status" style="color: #facc15; font-size: 12px; margin-bottom: 10px;">Loading Camera & Pose AI...</div>
+            <div id="camera-status" style="color: #facc15; font-size: 13px; margin-bottom: 15px;">Initializing MediaPipe AI...</div>
             <input type="text" id="player-name" placeholder="Enter Player Name" maxlength="12">
             <button id="start-btn" onclick="startGame()" disabled>Start Dance Routine</button>
         </div>
@@ -144,11 +152,12 @@
     <script>
         const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
 
-        let video, poseNet, poses = [];
         let score = 0, timeLeft = 180, isGameActive = false, lastScoreTime = 0;
         let elapsedSeconds = 0;
         let playerName = "Anonymous";
         let particles = [], scorePopups = [];
+        let trackedLandmarks = null;
+        let gameTimerInterval = null;
 
         let localHighScores = JSON.parse(localStorage.getItem('dance_highscores')) || [
             { name: "ProDancer", score: 450 },
@@ -166,38 +175,65 @@
 
         let currentKeyframe = songRoutine[0];
 
+        // Setup MediaPipe Pose Engine
+        const videoElement = document.getElementById('webcam-video');
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onPoseResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().then(() => {
+            document.getElementById('camera-status').innerText = "MediaPipe Ready! Camera Connected.";
+            document.getElementById('camera-status').style.color = "#34d399";
+            document.getElementById('start-btn').disabled = false;
+        }).catch(err => {
+            document.getElementById('camera-status').innerText = "Camera access denied or unreadable.";
+            document.getElementById('camera-status').style.color = "#ef4444";
+        });
+
+        function onPoseResults(results) {
+            if (results.poseLandmarks) {
+                trackedLandmarks = results.poseLandmarks;
+            } else {
+                trackedLandmarks = null;
+            }
+        }
+
         function setup() {
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
-            
-            // Fix 1: Enable webcam capture with explicit constraints for browser/GitHub compatibility
-            video = createCapture(VIDEO, function() {
-                // Initialize PoseNet only after video feed stream is active
-                poseNet = ml5.poseNet(video, modelReady);
-                poseNet.on('pose', results => poses = results);
-            });
-            video.size(640, 480);
-            video.hide();
-        }
-
-        function modelReady() {
-            document.getElementById('camera-status').innerText = "Camera & AI Ready!";
-            document.getElementById('camera-status').style.color = "#34d399";
-            document.getElementById('start-btn').disabled = false;
         }
 
         function draw() {
-            // Fix 2: Clear the canvas with complete transparency every frame
-            clear();
+            clear(); // Clear canvas each frame to maintain transparent background overlay
             
-            // Render user webcam at 60% opacity to blend over YouTube video
             push();
-            translate(width, 0); scale(-1, 1);
-            tint(255, 150); 
-            image(video, 0, 0, width, height);
+            translate(width, 0); scale(-1, 1); // Mirror webcam overlay
+            
+            // Render user webcam over YouTube background
+            if (videoElement.readyState >= 2) {
+                tint(255, 140);
+                image(videoElement, 0, 0, width, height);
+            }
 
-            if (poses.length > 0 && isGameActive) {
-                drawSkeleton(poses[0].pose);
+            if (trackedLandmarks && isGameActive) {
+                drawSkeleton(trackedLandmarks);
             }
             pop();
 
@@ -209,22 +245,25 @@
             }
         }
 
-        function drawSkeleton(pose) {
+        function drawSkeleton(landmarks) {
             noTint();
-            // Draw skeleton joints
-            for (let kp of pose.keypoints) {
-                if (kp.score > 0.1) {
+            
+            // Key MediaPipe Indices: 11: Left Shoulder, 12: Right Shoulder, 15: Left Wrist, 16: Right Wrist
+            const keyIndices = [11, 12, 15, 16];
+            keyIndices.forEach(idx => {
+                let lm = landmarks[idx];
+                if (lm && lm.visibility > 0.3) {
                     fill(0, 255, 204); noStroke();
-                    ellipse(kp.position.x, kp.position.y, 10, 10);
+                    ellipse(lm.x * width, lm.y * height, 10, 10);
                 }
-            }
+            });
 
-            // Draw skeleton limbs
-            let ls = pose.leftShoulder, lw = pose.leftWrist;
-            let rs = pose.rightShoulder, rw = pose.rightWrist;
+            // Draw limbs
             stroke(236, 72, 153); strokeWeight(4);
-            if (ls.confidence > 0.1 && lw.confidence > 0.1) line(ls.x, ls.y, lw.x, lw.y);
-            if (rs.confidence > 0.1 && rw.confidence > 0.1) line(rs.x, rs.y, rw.x, rw.y);
+            let ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+            
+            if (ls.visibility > 0.3 && lw.visibility > 0.3) line(ls.x * width, ls.y * height, lw.x * width, lw.y * height);
+            if (rs.visibility > 0.3 && rw.visibility > 0.3) line(rs.x * width, rs.y * height, rw.x * width, rw.y * height);
         }
 
         function handleEffects() {
@@ -240,8 +279,7 @@
             for (let i = scorePopups.length - 1; i >= 0; i--) {
                 let sp = scorePopups[i];
                 fill(250, 204, 21, sp.alpha);
-                textSize(24);
-                textAlign(CENTER);
+                textSize(24); textAlign(CENTER);
                 text("+10 PERFECT!", sp.x, sp.y);
                 sp.y -= 1.5; sp.alpha -= 4;
                 if (sp.alpha <= 0) scorePopups.splice(i, 1);
@@ -249,18 +287,19 @@
         }
 
         function triggerScoreEffects() {
-            if (poses.length === 0) return;
-            let lw = poses[0].pose.leftWrist;
-            let rw = poses[0].pose.rightWrist;
-
             scorePopups.push({ x: width / 2, y: height / 2, alpha: 255 });
 
+            if (!trackedLandmarks) return;
+            let lw = trackedLandmarks[15];
+            let rw = trackedLandmarks[16];
+
             [lw, rw].forEach(w => {
-                if (w.confidence > 0.1) {
-                    let rx = width - w.x;
+                if (w && w.visibility > 0.3) {
+                    let rx = width - (w.x * width); // Mirrored position
+                    let ry = w.y * height;
                     for (let i = 0; i < 8; i++) {
                         particles.push({
-                            x: rx, y: w.y,
+                            x: rx, y: ry,
                             vx: random(-3, 3), vy: random(-3, 3),
                             size: random(6, 12),
                             alpha: 255,
@@ -283,15 +322,15 @@
         }
 
         function calculatePostureSimilarity() {
-            if (poses.length === 0) return;
-            let pose = poses[0].pose;
+            if (!trackedLandmarks) return;
 
-            let ls = pose.leftShoulder, lw = pose.leftWrist;
-            let rs = pose.rightShoulder, rw = pose.rightWrist;
+            let ls = trackedLandmarks[11], rs = trackedLandmarks[12];
+            let lw = trackedLandmarks[15], rw = trackedLandmarks[16];
 
-            if (ls.confidence > 0.08 && lw.confidence > 0.08 && rs.confidence > 0.08 && rw.confidence > 0.08) {
-                let leftArmAngle = Math.atan2(lw.y - ls.y, lw.x - ls.x);
-                let rightArmAngle = Math.atan2(rw.y - rs.y, rw.x - rs.x);
+            if (ls.visibility > 0.3 && lw.visibility > 0.3 && rs.visibility > 0.3 && rw.visibility > 0.3) {
+                // Vector calculations using pixel coordinates
+                let leftArmAngle = Math.atan2((lw.y - ls.y) * height, (lw.x - ls.x) * width);
+                let rightArmAngle = Math.atan2((rw.y - rs.y) * height, (rw.x - rs.x) * width);
 
                 let diffL = Math.abs(leftArmAngle - currentKeyframe.angles[0]);
                 let diffR = Math.abs(rightArmAngle - currentKeyframe.angles[1]);
@@ -326,22 +365,21 @@
             let iframe = document.getElementById('yt-bg').contentWindow;
             iframe.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
 
-            let timerInterval = setInterval(() => {
-                if (!isGameActive) {
-                    clearInterval(timerInterval);
-                    return;
-                }
+            if (gameTimerInterval) clearInterval(gameTimerInterval);
+            gameTimerInterval = setInterval(() => {
+                if (!isGameActive) return;
                 timeLeft--;
                 elapsedSeconds++;
                 if (timeLeft <= 0) {
                     endGame();
-                    clearInterval(timerInterval);
                 }
             }, 1000);
         }
 
         async function endGame() {
             isGameActive = false;
+            if (gameTimerInterval) clearInterval(gameTimerInterval);
+
             let iframe = document.getElementById('yt-bg').contentWindow;
             iframe.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
 
