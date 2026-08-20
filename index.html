@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Dance Arcade - Hands-Free Posture Sync</title>
+    <title>AI Dance Arcade - Easy Auto-Start</title>
     <!-- p5.js Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
@@ -27,6 +27,7 @@
             position: relative; width: 640px; height: 480px;
             border: 4px solid #3b82f6; border-radius: 12px;
             overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            cursor: pointer;
         }
 
         #yt-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
@@ -54,33 +55,27 @@
         #meter-fill { width: 0%; height: 100%; background: #34d399; transition: width 0.1s ease; }
 
         .overlay {
-            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(4px); display: flex; flex-direction: column;
+            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(2px); display: flex; flex-direction: column;
             align-items: center; justify-content: center; z-index: 10;
         }
         .hidden { display: none !important; }
 
         .gesture-hint {
-            font-size: 22px; font-weight: bold; color: #34d399;
-            background: rgba(0, 0, 0, 0.7); padding: 15px 25px;
-            border-radius: 12px; border: 2px solid #34d399; margin-top: 15px;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
+            font-size: 20px; font-weight: bold; color: #34d399;
+            background: rgba(0, 0, 0, 0.85); padding: 12px 20px;
+            border-radius: 12px; border: 2px solid #34d399; margin-top: 10px;
+            text-align: center;
         }
     </style>
 </head>
 <body>
 
-    <h1>AI Dance Arcade - Hands-Free Mode</h1>
-    <p style="color: #94a3b8; margin-top: 0;">Raise both hands above your head to start dancing!</p>
+    <h1>AI Dance Arcade</h1>
+    <p style="color: #94a3b8; margin-top: 0;">Raise hand above shoulders or click screen to start!</p>
 
-    <div id="game-container">
-        <!-- Background Video (wESUmsQZWVI) -->
+    <div id="game-container" onclick="forceStart()">
+        <!-- Background Video -->
         <iframe id="yt-bg" src="https://www.youtube.com/embed/wESUmsQZWVI?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" frameborder="0"></iframe>
 
         <div id="ui-bar">
@@ -102,19 +97,20 @@
             <div id="meter-fill"></div>
         </div>
 
-        <!-- Start Overlay with Hands-Free Trigger -->
+        <!-- Start Overlay -->
         <div id="start-overlay" class="overlay">
             <h2 style="color: #ec4899; margin-bottom: 5px;">Hands-Free Dance Match</h2>
-            <p style="color: #94a3b8; margin-top: 0;">Step back so the camera sees your body.</p>
-            <div class="gesture-hint">🙌 RAISE BOTH HANDS TO START 🙌</div>
+            <div class="gesture-hint">
+                🙌 RAISE HAND UP TO START 🙌<br>
+                <span style="font-size: 14px; color: #94a3b8;">(Or click anywhere on video screen)</span>
+            </div>
         </div>
 
-        <!-- End Overlay with Auto-Restart -->
+        <!-- End Overlay -->
         <div id="end-overlay" class="overlay hidden">
             <h2 style="color: #facc15; margin-bottom: 10px;">Stage Complete!</h2>
             <p id="final-stats" style="font-size: 18px; margin-bottom: 20px;"></p>
-            <div id="sheet-status" style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Logging score...</div>
-            <div class="gesture-hint">🙌 RAISE BOTH HANDS TO PLAY AGAIN 🙌</div>
+            <div class="gesture-hint">🙌 RAISE HAND TO PLAY AGAIN 🙌</div>
         </div>
     </div>
 
@@ -124,9 +120,8 @@
         let video, poseNet, poses = [];
         let score = 0, timeLeft = 180, isGameActive = false, lastScoreTime = 0;
         let elapsedSeconds = 0;
-        let startTriggerTimer = 0;
+        let triggerFrames = 0;
 
-        // Routine keyframes
         const songRoutine = [
             { time: 0,  name: "BOTH HANDS UP", angles: [-2.1, -1.0] },
             { time: 5,  name: "LEFT ARM HIGH",  angles: [-2.2, 0.5] },
@@ -159,7 +154,6 @@
                 let pose = poses[0].pose;
                 drawSkeleton(pose);
 
-                // If game is inactive, check for hands-free start gesture
                 if (!isGameActive) {
                     checkHandsFreeStart(pose);
                 }
@@ -173,26 +167,32 @@
         }
 
         function checkHandsFreeStart(pose) {
-            let lw = pose.leftWrist, ls = pose.leftShoulder;
-            let rw = pose.rightWrist, rs = pose.rightShoulder;
+            let lw = pose.leftWrist, rw = pose.rightWrist;
+            let ls = pose.leftShoulder, rs = pose.rightShoulder;
 
-            // Check if both wrists are above shoulders
-            if (lw.confidence > 0.1 && rw.confidence > 0.1 && lw.y < ls.y && rw.y < rs.y) {
-                startTriggerTimer++;
+            // Simplified Trigger: If EITHER wrist is higher than its shoulder
+            let leftHandUp = (lw.y < ls.y);
+            let rightHandUp = (rw.y < rs.y);
 
-                // Draw loading circle over player's head
-                fill(52, 211, 153, 180); noStroke();
-                let headX = (pose.nose.x);
-                let headY = (pose.nose.y - 60);
-                ellipse(headX, headY, startTriggerTimer * 2, startTriggerTimer * 2);
+            if (leftHandUp || rightHandUp) {
+                triggerFrames++;
 
-                // Require ~1.5 seconds (45 frames) of holding the posture to start
-                if (startTriggerTimer > 45) {
-                    startTriggerTimer = 0;
+                // Visual Loading indicator on top-left screen
+                fill(52, 211, 153); noStroke();
+                rect(0, 0, triggerFrames * 25, 8);
+
+                if (triggerFrames > 20) { // Fast 0.7 second hold trigger
+                    triggerFrames = 0;
                     startGame();
                 }
             } else {
-                startTriggerTimer = 0;
+                triggerFrames = 0;
+            }
+        }
+
+        function forceStart() {
+            if (!isGameActive) {
+                startGame();
             }
         }
 
@@ -223,7 +223,7 @@
             let ls = pose.leftShoulder, lw = pose.leftWrist;
             let rs = pose.rightShoulder, rw = pose.rightWrist;
 
-            if (ls.confidence > 0.08 && lw.confidence > 0.08 && rs.confidence > 0.08 && rw.confidence > 0.08) {
+            if (ls.confidence > 0.05 && lw.confidence > 0.05 && rs.confidence > 0.05 && rw.confidence > 0.05) {
                 let leftArmAngle = Math.atan2(lw.y - ls.y, lw.x - ls.x);
                 let rightArmAngle = Math.atan2(rw.y - rs.y, rw.x - rs.x);
 
@@ -236,7 +236,7 @@
                 document.getElementById('match-pct').innerText = `${matchScore}%`;
                 document.getElementById('meter-fill').style.width = `${matchScore}%`;
 
-                if (matchScore > 65) {
+                if (matchScore > 60) {
                     let now = millis();
                     if (now - lastScoreTime > 400) {
                         score += 10;
@@ -276,29 +276,8 @@
             let iframe = document.getElementById('yt-bg').contentWindow;
             iframe.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
 
-            const prizesWon = Math.floor(score / 50);
-            const gameResult = score >= 100 ? "Winner" : "Completed";
-
             document.getElementById('final-stats').innerText = `Final Score: ${score}`;
-            document.getElementById('sheet-status').innerText = "Logging score to Google Sheet...";
             document.getElementById('end-overlay').classList.remove('hidden');
-
-            await sendScoreToGoogleSheet("Player 1", score, prizesWon, gameResult);
-        }
-
-        async function sendScoreToGoogleSheet(pName, pScore, pPrizes, pResult) {
-            const payload = { playerName: pName, score: pScore, prizes: pPrizes, result: pResult };
-            try {
-                await fetch(GOOGLE_SHEET_SCRIPT_URL, {
-                    method: "POST",
-                    mode: "no-cors",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                document.getElementById('sheet-status').innerText = "Score successfully logged!";
-            } catch (error) {
-                document.getElementById('sheet-status').innerText = "Logged locally.";
-            }
         }
     </script>
 </body>
