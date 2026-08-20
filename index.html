@@ -27,18 +27,19 @@
             position: relative; width: 640px; height: 480px;
             border: 4px solid #3b82f6; border-radius: 12px;
             overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            background-color: #000;
+            background: #000;
         }
 
-        /* YouTube Background (50% Transparent Mixed Reality) */
+        /* YouTube Background (z-index 1) */
         #yt-bg { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            pointer-events: none; z-index: 1; opacity: 0.5;
+            pointer-events: none; z-index: 1; opacity: 0.65;
         }
 
+        /* Canvas Overlay (z-index 2) */
         #defaultCanvas0 { 
-            position: absolute; top: 0; left: 0; z-index: 2; 
-            background: transparent !important;
+            position: absolute !important; top: 0; left: 0; z-index: 2; 
+            pointer-events: none;
         }
 
         #ui-bar {
@@ -123,8 +124,9 @@
 
         <div id="start-overlay" class="overlay">
             <h2 style="color: #ec4899; margin-bottom: 10px;">Dance Posture Routine</h2>
+            <div id="camera-status" style="color: #facc15; font-size: 12px; margin-bottom: 10px;">Loading Camera & Pose AI...</div>
             <input type="text" id="player-name" placeholder="Enter Player Name" maxlength="12">
-            <button onclick="startGame()">Start Dance Routine</button>
+            <button id="start-btn" onclick="startGame()" disabled>Start Dance Routine</button>
         </div>
 
         <div id="end-overlay" class="overlay hidden">
@@ -167,21 +169,31 @@
         function setup() {
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
-            video = createCapture(VIDEO);
+            
+            // Fix 1: Enable webcam capture with explicit constraints for browser/GitHub compatibility
+            video = createCapture(VIDEO, function() {
+                // Initialize PoseNet only after video feed stream is active
+                poseNet = ml5.poseNet(video, modelReady);
+                poseNet.on('pose', results => poses = results);
+            });
             video.size(640, 480);
             video.hide();
+        }
 
-            poseNet = ml5.poseNet(video, () => console.log("PoseNet Ready"));
-            poseNet.on('pose', results => poses = results);
+        function modelReady() {
+            document.getElementById('camera-status').innerText = "Camera & AI Ready!";
+            document.getElementById('camera-status').style.color = "#34d399";
+            document.getElementById('start-btn').disabled = false;
         }
 
         function draw() {
+            // Fix 2: Clear the canvas with complete transparency every frame
             clear();
+            
+            // Render user webcam at 60% opacity to blend over YouTube video
             push();
             translate(width, 0); scale(-1, 1);
-            
-            // 60% video opacity blend over background
-            tint(255, 150);
+            tint(255, 150); 
             image(video, 0, 0, width, height);
 
             if (poses.length > 0 && isGameActive) {
@@ -189,7 +201,6 @@
             }
             pop();
 
-            // FX Particle & Visual Score Rendering
             handleEffects();
 
             if (isGameActive) {
@@ -200,16 +211,23 @@
 
         function drawSkeleton(pose) {
             noTint();
+            // Draw skeleton joints
             for (let kp of pose.keypoints) {
                 if (kp.score > 0.1) {
                     fill(0, 255, 204); noStroke();
                     ellipse(kp.position.x, kp.position.y, 10, 10);
                 }
             }
+
+            // Draw skeleton limbs
+            let ls = pose.leftShoulder, lw = pose.leftWrist;
+            let rs = pose.rightShoulder, rw = pose.rightWrist;
+            stroke(236, 72, 153); strokeWeight(4);
+            if (ls.confidence > 0.1 && lw.confidence > 0.1) line(ls.x, ls.y, lw.x, lw.y);
+            if (rs.confidence > 0.1 && rw.confidence > 0.1) line(rs.x, rs.y, rw.x, rw.y);
         }
 
         function handleEffects() {
-            // Draw particles
             for (let i = particles.length - 1; i >= 0; i--) {
                 let p = particles[i];
                 fill(p.color[0], p.color[1], p.color[2], p.alpha);
@@ -219,7 +237,6 @@
                 if (p.alpha <= 0) particles.splice(i, 1);
             }
 
-            // Draw floating "+10" score texts
             for (let i = scorePopups.length - 1; i >= 0; i--) {
                 let sp = scorePopups[i];
                 fill(250, 204, 21, sp.alpha);
@@ -236,13 +253,11 @@
             let lw = poses[0].pose.leftWrist;
             let rw = poses[0].pose.rightWrist;
 
-            // Spawn floating text
             scorePopups.push({ x: width / 2, y: height / 2, alpha: 255 });
 
-            // Burst particles at hands
             [lw, rw].forEach(w => {
                 if (w.confidence > 0.1) {
-                    let rx = width - w.x; // Mirrored position
+                    let rx = width - w.x;
                     for (let i = 0; i < 8; i++) {
                         particles.push({
                             x: rx, y: w.y,
@@ -287,7 +302,7 @@
                 document.getElementById('match-pct').innerText = `${matchScore}%`;
                 document.getElementById('meter-fill').style.width = `${matchScore}%`;
 
-                if (matchScore > 65) {
+                if (matchScore > 60) {
                     let now = millis();
                     if (now - lastScoreTime > 400) {
                         score += 10;
@@ -336,7 +351,6 @@
             document.getElementById('final-stats').innerText = `Player: ${playerName} | Final Score: ${score} pts`;
             document.getElementById('sheet-status').innerText = "Logging score to Google Sheet...";
 
-            // High Score Board Updates
             localHighScores.push({ name: playerName, score: score });
             localHighScores.sort((a, b) => b.score - a.score);
             localHighScores = localHighScores.slice(0, 5);
