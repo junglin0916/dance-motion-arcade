@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Dance Arcade</title>
+    <title>AI Dance Arcade - Mixed Reality</title>
     <!-- p5.js Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
@@ -30,18 +30,18 @@
             background-color: #000;
         }
 
-        /* Layer 1: YouTube Background Video */
+        /* YouTube Background: set to 50% opacity for mixed reality blend */
         #yt-bg { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            pointer-events: none; z-index: 1; opacity: 1;
+            pointer-events: none; z-index: 1; opacity: 0.5;
         }
 
-        /* Layer 2: p5.js Canvas (Webcam Feed & Pose Skeleton) */
+        /* Canvas: forced transparent background sitting directly on top */
         #defaultCanvas0 { 
             position: absolute; top: 0; left: 0; z-index: 2; 
+            background: transparent !important;
         }
 
-        /* Layer 3: HUD Elements */
         #ui-bar {
             position: absolute; top: 10px; left: 10px; right: 10px;
             display: flex; justify-content: space-between; z-index: 3; pointer-events: none;
@@ -63,7 +63,6 @@
 
         #meter-fill { width: 0%; height: 100%; background: #34d399; transition: width 0.1s ease; }
 
-        /* Layer 4: Overlays */
         .overlay {
             position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85);
             backdrop-filter: blur(4px); display: flex; flex-direction: column;
@@ -92,7 +91,7 @@
     <p style="color: #94a3b8; margin-top: 0;">Match the postures on screen to build high scores!</p>
 
     <div id="game-container">
-        <!-- Background Video -->
+        <!-- Background Video (50% Opacity) -->
         <iframe id="yt-bg" src="https://www.youtube.com/embed/wESUmsQZWVI?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" frameborder="0"></iframe>
 
         <div id="ui-bar">
@@ -148,7 +147,7 @@
             let canvas = createCanvas(640, 480);
             canvas.parent('game-container');
             
-            // Explicit webcam capture initialization
+            // Webcam capture initialization
             video = createCapture(VIDEO, () => {
                 document.getElementById('cam-status').innerText = "Camera Active! Loading AI...";
                 
@@ -164,20 +163,18 @@
         }
 
         function draw() {
-            // Clear canvas completely every frame to allow the YouTube iframe to show through
+            // Clear canvas every frame so background iframe is visible underneath
             clear();
             
-            if (video) {
+            if (video && video.elt.readyState === 4) {
                 push();
-                // Mirror the camera feed horizontally
                 translate(width, 0); 
                 scale(-1, 1);
                 
-                // 50% opacity tint (128 out of 255) for blended mixed-reality effect
-                tint(255, 128); 
+                // Draw camera feed at 60% opacity to blend over YouTube video
+                tint(255, 150); 
                 image(video, 0, 0, width, height);
 
-                // Draw skeleton tracker on top
                 if (poses.length > 0) {
                     drawSkeleton(poses[0].pose);
                 }
@@ -191,7 +188,6 @@
         }
 
         function drawSkeleton(pose) {
-            // Restore full opacity for tracking dots
             noTint();
             for (let kp of pose.keypoints) {
                 if (kp.score > 0.1) {
