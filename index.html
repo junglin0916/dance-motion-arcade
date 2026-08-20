@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Dance Arcade - ml5 PoseNet Duet</title>
+<title>AI Dance Arcade - Strict Anti-Ghost Build</title>
 
 <!-- p5.js Libraries -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
@@ -87,7 +87,7 @@ button:active { transform: scale(0.95); }
 <body>
 
 <h1>AI Dance Arcade</h1>
-<p style="color: #94a3b8; margin-top: 0;">Two dancers, one camera — match the YMCA moves in sync!</p>
+<p style="color: #94a3b8; margin-top: 0;">Two dancers, one camera — strict real-player tracking!</p>
 
 <div id="game-container">
     <iframe id="yt-bg"
@@ -146,10 +146,6 @@ const players = {
     2: { name: "Player 2", score: 0, lastScoreTime: 0 }
 };
 
-// -------------------------------------------------------------------------
-// EXACT YMCA VIDEO CHOREOGRAPHY TIMELINE (in seconds from 0s to 180s)
-// Adjust start/end ranges below to fine-tune sync with the video dancers
-// -------------------------------------------------------------------------
 const ymcaRoutine = [
     { start: 0,   end: 15,  label: "MARCH IN PLACE!", check: p => Math.abs(p.lk.y - p.rk.y) > 20 },
     { start: 15,  end: 30,  label: "REACH HIGH (Y)!", check: p => p.lw.y < p.ls.y - 30 && p.rw.y < p.rs.y - 30 },
@@ -180,21 +176,38 @@ function setup() {
     poseNet.on('pose', results => rawPoses = results);
 }
 
-// Strictly filter out ghost poses (requires visible shoulders AND hips with >30% confidence)
+// STRICT ANTI-GHOST FILTER
 function getValidPoses() {
     return rawPoses
         .filter(p => {
-            if (!p || !p.pose) return false;
-            let score = p.pose.score;
+            if (!p || !p.pose || !p.pose.keypoints) return false;
+            
+            // 1. Minimum overall confidence
+            if (p.pose.score < 0.45) return false;
+
+            // 2. Count valid keypoints (>40% confidence)
+            let highConfPoints = p.pose.keypoints.filter(kp => kp.score > 0.4).length;
+            if (highConfPoints < 7) return false;
+
+            // 3. Mandatory Human Core Check (Nose + Shoulders + Hips must all exist)
+            let nose = p.pose.nose;
             let ls = p.pose.leftShoulder, rs = p.pose.rightShoulder;
             let lh = p.pose.leftHip, rh = p.pose.rightHip;
-            
-            // Rejects ghosts, background items, or weak detection noise
-            return score > 0.35 && ls && rs && lh && rh && 
-                   ls.confidence > 0.3 && rs.confidence > 0.3;
+
+            let coreValid = nose && nose.confidence > 0.4 &&
+                            ls && ls.confidence > 0.4 && rs && rs.confidence > 0.4 &&
+                            lh && lh.confidence > 0.3 && rh && rh.confidence > 0.3;
+
+            if (!coreValid) return false;
+
+            // 4. Proximity Check: Rejects stretched/scattered background points
+            let shoulderWidth = Math.abs(ls.x - rs.x);
+            if (shoulderWidth < 25 || shoulderWidth > 260) return false; // Unnatural torso scale
+
+            return true;
         })
         .map(p => p.pose)
-        .sort((a, b) => a.nose.x - b.nose.x); // Left dancer = P1, Right dancer = P2
+        .sort((a, b) => a.nose.x - b.nose.x); // Left = P1, Right = P2
 }
 
 function draw() {
@@ -214,7 +227,7 @@ function draw() {
             fill(colors[i][0], colors[i][1], colors[i][2]);
             noStroke();
             for (let k = 0; k < kp.length; k++) {
-                if (kp[k].score > 0.2) {
+                if (kp[k].score > 0.25) {
                     ellipse(kp[k].position.x, kp[k].position.y, 10, 10);
                 }
             }
