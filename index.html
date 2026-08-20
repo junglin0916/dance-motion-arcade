@@ -3,55 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Dance Arcade</title>
+    <title>AI Dance Arcade - Posture Sync</title>
+    <!-- p5.js Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.dom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.9.0/addons/p5.sound.min.js"></script>
+    <!-- ml5.js Library -->
+    <script src="https://unpkg.com/ml5@0.4.2/dist/ml5.min.js"></script>
+    
     <style>
-        * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0;
             background-color: #0f172a; color: #ffffff;
             font-family: Arial, sans-serif;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            min-height: 100vh; overflow: hidden;
+            min-height: 100vh;
         }
 
-        h1 { margin: 10px 0 5px 0; font-size: 26px; color: #ec4899; }
+        h1 { margin: 10px 0 5px 0; font-size: 28px; color: #ec4899; text-shadow: 0 0 10px rgba(236, 72, 153, 0.5); }
 
         #game-container {
             position: relative; width: 640px; height: 480px;
             border: 4px solid #3b82f6; border-radius: 12px;
-            overflow: hidden; background: #000;
+            overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            background: #000;
         }
 
-        video, canvas {
-            position: absolute; top: 0; left: 0;
-            width: 640px; height: 480px; transform: scaleX(-1);
+        /* YouTube Background */
+        #yt-bg { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            pointer-events: none; z-index: 1; opacity: 0.65;
+        }
+
+        /* Canvas Overlay */
+        #defaultCanvas0 { 
+            position: absolute !important; top: 0; left: 0; z-index: 2; 
+            pointer-events: none;
         }
 
         #ui-bar {
             position: absolute; top: 10px; left: 10px; right: 10px;
-            display: flex; justify-content: space-between; z-index: 5; pointer-events: none;
+            display: flex; justify-content: space-between; z-index: 3; pointer-events: none;
         }
 
         .hud-card {
             background: rgba(15, 23, 42, 0.85); border: 1px solid #475569;
-            padding: 6px 14px; border-radius: 8px; text-align: center;
+            padding: 8px 16px; border-radius: 8px; text-align: center;
         }
 
         .hud-title { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
         .hud-value { font-size: 18px; font-weight: bold; color: #facc15; }
 
-        #meter-bg {
+        #similarity-meter {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            width: 300px; height: 16px; background: rgba(0,0,0,0.6);
-            border: 2px solid #3b82f6; border-radius: 8px; overflow: hidden; z-index: 5;
+            width: 320px; height: 18px; background: rgba(0,0,0,0.6);
+            border: 2px solid #3b82f6; border-radius: 9px; overflow: hidden; z-index: 4;
         }
 
         #meter-fill { width: 0%; height: 100%; background: #34d399; transition: width 0.1s ease; }
 
         .overlay {
-            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.95);
-            display: flex; flex-direction: column;
+            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(4px); display: flex; flex-direction: column;
             align-items: center; justify-content: center; z-index: 10; padding: 20px;
         }
         .hidden { display: none !important; }
@@ -63,19 +77,31 @@
 
         button {
             padding: 12px 28px; border-radius: 8px; border: none;
-            background: #ec4899; color: white; font-weight: bold; font-size: 16px; cursor: pointer;
+            background: linear-gradient(135deg, #ec4899, #8b5cf6);
+            color: white; font-weight: bold; font-size: 16px; cursor: pointer;
+            box-shadow: 0 0 15px rgba(236, 72, 153, 0.4);
+            transition: transform 0.1s ease;
         }
 
-        button:hover { background: #db2777; }
+        button:hover { transform: scale(1.05); }
+
+        .leaderboard {
+            width: 80%; background: rgba(30, 41, 59, 0.8); border-radius: 8px;
+            padding: 10px; margin-bottom: 15px; border: 1px solid #475569;
+        }
+
+        .lb-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 8px; }
+        .lb-row:nth-child(even) { background: rgba(255,255,255,0.05); }
     </style>
 </head>
 <body>
 
-    <h1>AI Dance Arcade - Recovery Build</h1>
+    <h1>AI Dance Arcade - Posture Sync</h1>
+    <p style="color: #94a3b8; margin-top: 0;">Copy the posture vectors on screen to build high scores!</p>
 
     <div id="game-container">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="game-canvas" width="640" height="480"></canvas>
+        <!-- Background Video -->
+        <iframe id="yt-bg" src="https://www.youtube.com/embed/wESUmsQZWVI?enablejsapi=1&autoplay=0&controls=0&mute=1&loop=1" frameborder="0"></iframe>
 
         <div id="ui-bar">
             <div class="hud-card">
@@ -84,93 +110,300 @@
             </div>
             <div class="hud-card">
                 <div class="hud-title">Target Move</div>
-                <div id="pose-name" class="hud-value" style="color: #ec4899;">HANDS UP</div>
+                <div id="pose-name" class="hud-value" style="color: #ec4899;">HANDS UP HIGH</div>
             </div>
             <div class="hud-card">
-                <div class="hud-title">Match</div>
+                <div class="hud-title">Match Accuracy</div>
                 <div id="match-pct" class="hud-value" style="color: #34d399;">0%</div>
             </div>
         </div>
 
-        <div id="meter-bg"><div id="meter-fill"></div></div>
+        <div id="similarity-meter">
+            <div id="meter-fill"></div>
+        </div>
 
         <div id="start-overlay" class="overlay">
-            <h2 style="color: #ec4899; margin-bottom: 5px;">Dance Routine</h2>
-            <p id="status-text" style="color: #facc15; font-size: 13px; margin-bottom: 15px;">Press Start to initialize</p>
+            <h2 style="color: #ec4899; margin-bottom: 10px;">Dance Posture Routine</h2>
+            <div id="camera-status" style="color: #facc15; font-size: 12px; margin-bottom: 10px;">Initializing Pose AI & Camera...</div>
             <input type="text" id="player-name" placeholder="Enter Player Name" maxlength="12">
-            <button id="start-btn">Start Game</button>
+            <button id="start-btn" onclick="startGame()">Start Dance Routine</button>
         </div>
 
         <div id="end-overlay" class="overlay hidden">
             <h2 style="color: #facc15; margin-bottom: 5px;">Stage Complete!</h2>
-            <p id="final-stats" style="font-size: 16px; color: #38bdf8;"></p>
-            <button id="restart-btn">Play Again</button>
+            <p id="final-stats" style="font-size: 16px; margin: 5px 0; color: #38bdf8;"></p>
+            
+            <h3 style="margin: 10px 0 5px 0; font-size: 14px; color: #ec4899;">High Scores</h3>
+            <div class="leaderboard" id="leaderboard-list"></div>
+
+            <div id="sheet-status" style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Logging score to Google Sheet...</div>
+            <button onclick="resetToStart()">Play Again</button>
         </div>
     </div>
 
     <script>
-        // Force clear browser cache state
-        console.log("App Version: 4.0 - Recovery Build Loaded");
+        const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
 
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('game-canvas');
-        const ctx = canvasElement.getContext('2d');
-        const startBtn = document.getElementById('start-btn');
-        const restartBtn = document.getElementById('restart-btn');
-        const statusText = document.getElementById('status-text');
+        let video, poseNet, poses = [];
+        let score = 0, timeLeft = 180, isGameActive = false, lastScoreTime = 0;
+        let elapsedSeconds = 0;
+        let playerName = "Anonymous";
+        let particles = [], scorePopups = [];
 
-        let isGameActive = false;
-        let score = 0;
+        let localHighScores = JSON.parse(localStorage.getItem('dance_highscores')) || [
+            { name: "ProDancer", score: 450 },
+            { name: "Groover", score: 300 },
+            { name: "Rookie", score: 150 }
+        ];
 
-        // Guaranteed Click Handler
-        startBtn.onclick = function() {
-            startBtn.disabled = true;
-            statusText.innerText = "Starting game engine...";
+        // Specific pose vector targets
+        const songRoutine = [
+            { time: 0,  name: "BOTH HANDS UP", angles: [-2.1, -1.0] },
+            { time: 5,  name: "LEFT ARM HIGH",  angles: [-2.2, 0.5] },
+            { time: 10, name: "RIGHT ARM HIGH", angles: [0.5, -1.0] },
+            { time: 15, name: "T-POSE OUT",     angles: [3.1, 0.0] },
+            { time: 20, name: "CROSS GUARDS",   angles: [0.8, 2.2] }
+        ];
+
+        let currentKeyframe = songRoutine[0];
+
+        function setup() {
+            let canvas = createCanvas(640, 480);
+            canvas.parent('game-container');
             
-            // Hide overlay instantly
-            document.getElementById('start-overlay').classList.add('hidden');
-            isGameActive = true;
+            // WebCam Initialization
+            video = createCapture(VIDEO, function() {
+                // Initialize PoseNet model directly once stream is open
+                try {
+                    poseNet = ml5.poseNet(video, modelReady);
+                    poseNet.on('pose', results => poses = results);
+                } catch(e) {
+                    console.error("PoseNet error:", e);
+                }
+            });
+            video.size(640, 480);
+            video.hide();
+        }
+
+        function modelReady() {
+            document.getElementById('camera-status').innerText = "Camera & AI Ready!";
+            document.getElementById('camera-status').style.color = "#34d399";
+        }
+
+        function draw() {
+            clear();
             
-            // Attempt camera initialization safely in background
-            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-                .then(stream => {
-                    videoElement.srcObject = stream;
-                    videoElement.play();
-                })
-                .catch(err => {
-                    console.warn("Camera bypass active:", err);
-                });
+            // Render user webcam over background YouTube video
+            push();
+            translate(width, 0); scale(-1, 1);
+            tint(255, 160); 
+            if (video) image(video, 0, 0, width, height);
 
-            // Start game main loop immediately
-            requestAnimationFrame(renderGame);
-        };
+            if (poses.length > 0 && isGameActive) {
+                drawSkeleton(poses[0].pose);
+            }
+            pop();
 
-        restartBtn.onclick = function() {
-            window.location.reload(true); // Force clear page reload
-        };
+            handleEffects();
 
-        function renderGame() {
-            if (!isGameActive) return;
+            if (isGameActive) {
+                updateRoutineProgress();
+                calculatePostureSimilarity();
+            }
+        }
 
-            // Clear frame
-            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        function drawSkeleton(pose) {
+            noTint();
+            // Draw skeleton joints
+            for (let kp of pose.keypoints) {
+                if (kp.score > 0.2) {
+                    fill(0, 255, 204); noStroke();
+                    ellipse(kp.position.x, kp.position.y, 10, 10);
+                }
+            }
 
-            // Arcade scoring simulation thread
-            score += 1;
-            let mockMatch = Math.floor(65 + Math.sin(Date.now() / 250) * 30);
+            // Draw arm limb lines
+            let ls = pose.leftShoulder, lw = pose.leftWrist;
+            let rs = pose.rightShoulder, rw = pose.rightWrist;
+            stroke(236, 72, 153); strokeWeight(4);
+            if (ls && lw && ls.confidence > 0.2 && lw.confidence > 0.2) line(ls.x, ls.y, lw.x, lw.y);
+            if (rs && rw && rs.confidence > 0.2 && rw.confidence > 0.2) line(rs.x, rs.y, rw.x, rw.y);
+        }
 
+        function handleEffects() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                fill(p.color[0], p.color[1], p.color[2], p.alpha);
+                noStroke();
+                ellipse(p.x, p.y, p.size);
+                p.x += p.vx; p.y += p.vy; p.alpha -= 5;
+                if (p.alpha <= 0) particles.splice(i, 1);
+            }
+
+            for (let i = scorePopups.length - 1; i >= 0; i--) {
+                let sp = scorePopups[i];
+                fill(250, 204, 21, sp.alpha);
+                textSize(24); textAlign(CENTER);
+                text("+10 PERFECT!", sp.x, sp.y);
+                sp.y -= 1.5; sp.alpha -= 4;
+                if (sp.alpha <= 0) scorePopups.splice(i, 1);
+            }
+        }
+
+        function triggerScoreEffects() {
+            if (poses.length === 0) return;
+            let lw = poses[0].pose.leftWrist;
+            let rw = poses[0].pose.rightWrist;
+
+            scorePopups.push({ x: width / 2, y: height / 2, alpha: 255 });
+
+            [lw, rw].forEach(w => {
+                if (w && w.confidence > 0.2) {
+                    let rx = width - w.x;
+                    for (let i = 0; i < 8; i++) {
+                        particles.push({
+                            x: rx, y: w.y,
+                            vx: random(-3, 3), vy: random(-3, 3),
+                            size: random(6, 12),
+                            alpha: 255,
+                            color: [236, 72, 153]
+                        });
+                    }
+                }
+            });
+        }
+
+        function updateRoutineProgress() {
+            let cycleTime = elapsedSeconds % 25;
+            for (let i = songRoutine.length - 1; i >= 0; i--) {
+                if (cycleTime >= songRoutine[i].time) {
+                    currentKeyframe = songRoutine[i];
+                    break;
+                }
+            }
+            document.getElementById('pose-name').innerText = currentKeyframe.name;
+        }
+
+        // Accurate Angle Vectors Matching
+        function calculatePostureSimilarity() {
+            if (poses.length === 0) {
+                document.getElementById('match-pct').innerText = `0%`;
+                document.getElementById('meter-fill').style.width = `0%`;
+                return;
+            }
+
+            let pose = poses[0].pose;
+            let ls = pose.leftShoulder, lw = pose.leftWrist;
+            let rs = pose.rightShoulder, rw = pose.rightWrist;
+
+            if (ls && lw && rs && rw && ls.confidence > 0.15 && lw.confidence > 0.15 && rs.confidence > 0.15 && rw.confidence > 0.15) {
+                // Vector math based on actual joints
+                let leftArmAngle = Math.atan2(lw.y - ls.y, lw.x - ls.x);
+                let rightArmAngle = Math.atan2(rw.y - rs.y, rw.x - rs.x);
+
+                let diffL = Math.abs(leftArmAngle - currentKeyframe.angles[0]);
+                let diffR = Math.abs(rightArmAngle - currentKeyframe.angles[1]);
+
+                let totalDiff = (diffL + diffR) / 2;
+                let matchScore = Math.max(0, Math.min(100, Math.floor((1 - totalDiff / 2.2) * 100)));
+
+                document.getElementById('match-pct').innerText = `${matchScore}%`;
+                document.getElementById('meter-fill').style.width = `${matchScore}%`;
+
+                // Only reward score if actual pose matches the target keyframe (>60% precision)
+                if (matchScore > 60) {
+                    let now = millis();
+                    if (now - lastScoreTime > 400) {
+                        score += 10;
+                        document.getElementById('score').innerText = score;
+                        triggerScoreEffects();
+                        lastScoreTime = now;
+                    }
+                }
+            } else {
+                document.getElementById('match-pct').innerText = `0%`;
+                document.getElementById('meter-fill').style.width = `0%`;
+            }
+        }
+
+        function startGame() {
+            const inputVal = document.getElementById('player-name').value.trim();
+            playerName = inputVal || "Anonymous";
+            score = 0; timeLeft = 180; elapsedSeconds = 0; isGameActive = true;
+            
             document.getElementById('score').innerText = score;
-            document.getElementById('match-pct').innerText = mockMatch + "%";
-            document.getElementById('meter-fill').style.width = mockMatch + "%";
+            document.getElementById('start-overlay').classList.add('hidden');
+            document.getElementById('end-overlay').classList.add('hidden');
+            
+            // Unmute/Play background YouTube audio loop
+            let iframe = document.getElementById('yt-bg').contentWindow;
+            iframe.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
 
-            // Draw target vector guidance graphics
-            ctx.strokeStyle = '#ec4899';
-            ctx.lineWidth = 8;
-            ctx.beginPath();
-            ctx.arc(320, 180, 40, 0, 2 * Math.PI);
-            ctx.stroke();
+            let timerInterval = setInterval(() => {
+                if (!isGameActive) {
+                    clearInterval(timerInterval);
+                    return;
+                }
+                timeLeft--;
+                elapsedSeconds++;
+                if (timeLeft <= 0) {
+                    endGame();
+                    clearInterval(timerInterval);
+                }
+            }, 1000);
+        }
 
-            requestAnimationFrame(renderGame);
+        async function endGame() {
+            isGameActive = false;
+            let iframe = document.getElementById('yt-bg').contentWindow;
+            iframe.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+
+            const prizesWon = Math.floor(score / 50);
+            const gameResult = score >= 100 ? "Winner" : "Completed";
+
+            document.getElementById('final-stats').innerText = `Player: ${playerName} | Final Score: ${score} pts`;
+            document.getElementById('sheet-status').innerText = "Logging score to Google Sheet...";
+
+            localHighScores.push({ name: playerName, score: score });
+            localHighScores.sort((a, b) => b.score - a.score);
+            localHighScores = localHighScores.slice(0, 5);
+            localStorage.setItem('dance_highscores', JSON.stringify(localHighScores));
+
+            updateLeaderboardUI();
+            document.getElementById('end-overlay').classList.remove('hidden');
+
+            await sendScoreToGoogleSheet(playerName, score, prizesWon, gameResult);
+        }
+
+        function updateLeaderboardUI() {
+            let lbContainer = document.getElementById('leaderboard-list');
+            lbContainer.innerHTML = '';
+            localHighScores.forEach((item, index) => {
+                let row = document.createElement('div');
+                row.className = 'lb-row';
+                row.innerHTML = `<span>#${index + 1} ${item.name}</span><span>${item.score} pts</span>`;
+                lbContainer.appendChild(row);
+            });
+        }
+
+        function resetToStart() {
+            document.getElementById('end-overlay').classList.add('hidden');
+            document.getElementById('start-overlay').classList.remove('hidden');
+        }
+
+        async function sendScoreToGoogleSheet(pName, pScore, pPrizes, pResult) {
+            const payload = { playerName: pName, score: pScore, prizes: pPrizes, result: pResult };
+            try {
+                await fetch(GOOGLE_SHEET_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                document.getElementById('sheet-status').innerText = "Score successfully logged to Google Sheet!";
+            } catch (error) {
+                document.getElementById('sheet-status').innerText = "Failed to log score to Google Sheet.";
+            }
         }
     </script>
 </body>
