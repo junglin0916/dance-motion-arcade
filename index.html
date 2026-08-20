@@ -136,7 +136,7 @@ button:active { transform: scale(0.95); }
 </div>
 
 <script>
-const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcQZEVrNZq6uWqATZvUeCW0qkXHmFq0n5EhvwPFsjkxvEDEW__VWXtWQuvM2sFqn361Q/exec";
+const GOOGLE_SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwIGRjDId5UYN75VkTyPCzdHF040-yMUACRx_JHJq5rVAGF7SrzHONKnBGERfRBtyFyHQ/exec";
 
 let video, poseNet, rawPoses = [];
 let timeLeft = 180, gameInterval = null, isGameActive = false, gameSecondsElapsed = 0;
@@ -176,20 +176,16 @@ function setup() {
     poseNet.on('pose', results => rawPoses = results);
 }
 
-// STRICT ANTI-GHOST FILTER
 function getValidPoses() {
     return rawPoses
         .filter(p => {
             if (!p || !p.pose || !p.pose.keypoints) return false;
             
-            // 1. Minimum overall confidence
             if (p.pose.score < 0.45) return false;
 
-            // 2. Count valid keypoints (>40% confidence)
             let highConfPoints = p.pose.keypoints.filter(kp => kp.score > 0.4).length;
             if (highConfPoints < 7) return false;
 
-            // 3. Mandatory Human Core Check (Nose + Shoulders + Hips must all exist)
             let nose = p.pose.nose;
             let ls = p.pose.leftShoulder, rs = p.pose.rightShoulder;
             let lh = p.pose.leftHip, rh = p.pose.rightHip;
@@ -200,14 +196,13 @@ function getValidPoses() {
 
             if (!coreValid) return false;
 
-            // 4. Proximity Check: Rejects stretched/scattered background points
             let shoulderWidth = Math.abs(ls.x - rs.x);
-            if (shoulderWidth < 25 || shoulderWidth > 260) return false; // Unnatural torso scale
+            if (shoulderWidth < 25 || shoulderWidth > 260) return false;
 
             return true;
         })
         .map(p => p.pose)
-        .sort((a, b) => a.nose.x - b.nose.x); // Left = P1, Right = P2
+        .sort((a, b) => a.nose.x - b.nose.x);
 }
 
 function draw() {
@@ -340,17 +335,24 @@ async function endGame() {
 }
 
 async function sendScoresToGoogleSheet(p1, p2) {
-    const payload = {
-        player1Name: p1.name, player1Score: p1.score,
-        player2Name: p2.name, player2Score: p2.score,
-        winner: p1.score === p2.score ? "Tie" : (p1.score > p2.score ? p1.name : p2.name)
-    };
+    const winnerName = p1.score === p2.score ? "Tie" : (p1.score > p2.score ? p1.name : p2.name);
+    
+    // Form-encoded parameters prevent cross-origin preflight data loss
+    const formData = new URLSearchParams();
+    formData.append("player1Name", p1.name);
+    formData.append("player1Score", p1.score);
+    formData.append("player2Name", p2.name);
+    formData.append("player2Score", p2.score);
+    formData.append("winner", winnerName);
+
     try {
         await fetch(GOOGLE_SHEET_SCRIPT_URL, {
             method: "POST",
             mode: "no-cors",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: formData.toString()
         });
         document.getElementById('sheet-status').innerText = "Scores successfully logged to Google Sheet!";
     } catch (error) {
